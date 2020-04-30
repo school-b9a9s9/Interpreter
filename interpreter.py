@@ -15,7 +15,7 @@ class Error():
         self.position = position
 
     def __repr__(self):
-        return self.errorMessage + 'at line: ' + str(self.line) + 'position: ' + str(self.position)
+        return self.errorMessage + ' at line: ' + str(self.line) + ', position: ' + str(self.position)
 
 class Token():
     def __init__(self, type: str, value: str, line: int, position: int):
@@ -147,38 +147,53 @@ class BinaryOperator(AST):
         self.operator = operator
         self.right = right
     def __repr__(self):
-        return 'BinaryOperator(' + str(self.left) + ', Operator(' + str(self.operator.value) + '), ' + str(self.right) + ')'
+        return 'BinaryOperator{' + str(self.left) + ', Operator(' + str(self.operator.value) + '), ' + str(self.right) + '}'
 
-def parseBinaryOperator(lhs: AST,tokenList: List[Token]):
+def parseBinaryOperator(lhs: AST, tokenList: List[Token]):
     # tokenlist is tokens after the +
     head, *tail = tokenList
     if tail[0].type != 'NUMBER' and tail[0].type != 'IDENTIFIER' and tail[0].type != 'BLOCK':
-        return Error('Invalid syntax ', head.line, head.position)
+        return Error('Invalid syntax', head.line, head.position)
+
     elif tail[1].type == 'END':
-        return BinaryOperator(lhs, head, Number(tail[0]))
+        if len(tail[2:]):
+            return BinaryOperator(lhs, head, Number(tail[0])), parseGeneral(tail[2:])
+        else:
+            return BinaryOperator(lhs, head, Number(tail[0]))
+
     elif tail[1].type != 'ADD' and tail[1].type != 'SUBTRACT' and tail[1].type != 'MULTIPLY' and tail[1].type != 'DIVIDE':
-        return Error('Invalid syntax ', head.line, head.position)
-    else:
+        return Error('Invalid syntax', head.line, head.position)
+
+    else: # if head is add or subtract do this, if head is mulitply or divide: lhs, head, Number(tail...) en dan verder callen (,parseGeneral????)
         return BinaryOperator(lhs, head, parseGeneral(tail))
 
 def parseGeneral(tokenList: List[Token], prev: List[AST] = []):
-    head, *tail = tokenList
+    if len(tokenList) > 0:
+        head, *tail = tokenList
 
-    if head.type == 'NUMBER':
-        prev.append(Number(head))
-        return parseGeneral(tail, prev)
+        if head.type == 'NUMBER' and prev == []:
+            prev.append(Number(head))
+            result = parseGeneral(tail, prev)
+        elif head.type == 'NUMBER' and prev != []:
+            result = Error('Syntax error', prev[0].value.line, prev[0].value.position)
 
-    elif head.type == 'ADD' or head.type == 'SUBTRACT':
-        lhs = prev.pop()
-        return parseBinaryOperator(lhs, tokenList)
+        elif head.type == 'ADD' or head.type == 'SUBTRACT':
+            lhs = prev.pop()
+            result = parseBinaryOperator(lhs, tokenList)
+        else:
+            result = None # TODO
 
+    else:
+        result = None # TODO
 
-    elif head.type == 'END':
-        return prev.append(parseGeneral(tail, prev))
-
+    return result
 
 def parse(tokenList: List[Token], prev = None):
-    return parseGeneral(tokenList)
+    result =  parseGeneral(tokenList)
+    if type(result) == Error:
+        print("error")
+    else:
+        return result
 
 # ---------------------------------------------
 # Run/Debug
