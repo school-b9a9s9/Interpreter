@@ -149,7 +149,7 @@ class BinaryOperator(AST):
     def __repr__(self):
         return 'BinaryOperator{' + str(self.left) + ', Operator(' + str(self.operator.value) + '), ' + str(self.right) + '}'
 
-def parseBinaryOperator(lhs: AST, tokenList: List[Token]):
+def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, BinaryOperator]]:
     # tokenlist is tokens after the +
     head, *tail = tokenList
     if tail[0].type != 'NUMBER' and tail[0].type != 'IDENTIFIER' and tail[0].type != 'BLOCK':
@@ -164,10 +164,10 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]):
     elif tail[1].type != 'ADD' and tail[1].type != 'SUBTRACT' and tail[1].type != 'MULTIPLY' and tail[1].type != 'DIVIDE':
         return Error('Invalid syntax', head.line, head.position)
 
-    else: # if head is add or subtract do this, if head is mulitply or divide: lhs, head, Number(tail...) en dan verder callen (,parseGeneral????)
+    else: # if head is add or subtract do this, if head is multiply or divide: lhs, head, Number(tail...) en dan verder callen (,parseGeneral????)
         return BinaryOperator(lhs, head, parseGeneral(tail))
 
-def parseGeneral(tokenList: List[Token], prev: List[AST] = []):
+def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, BinaryOperator]:
     if len(tokenList) > 0:
         head, *tail = tokenList
 
@@ -190,10 +190,7 @@ def parseGeneral(tokenList: List[Token], prev: List[AST] = []):
 
 def parse(tokenList: List[Token], prev = None):
     result =  parseGeneral(tokenList)
-    if type(result) == Error:
-        print("error")
-    else:
-        return result
+    return result
 
 # ---------------------------------------------
 # Run/Debug
