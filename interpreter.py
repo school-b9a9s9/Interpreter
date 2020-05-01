@@ -143,7 +143,7 @@ class BinaryOperator(AST):
         self.operator = operator
         self.right = right
     def __repr__(self):
-        return 'BinaryOperator{' + str(self.left) + ', Operator(' + str(self.operator.value) + '), ' + str(self.right) + '}'
+        return 'BinaryOperator{ ' + str(self.left) + ' ' + str(self.operator.value) + ' ' + str(self.right) + ' }'
 
 def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, BinaryOperator]]:
     # tokenlist is tokens after the +
@@ -157,12 +157,17 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
         else:
             return BinaryOperator(lhs, head, Number(tail[0])), tail[1:]
 
-    elif tail[1].type != 'ADD' and tail[1].type != 'SUBTRACT' and tail[1].type != 'MULTIPLY' and tail[1].type != 'DIVIDE':
-        return Error('Invalid syntax', head.line, head.position)
+    elif tail[1].type == 'ADD' or tail[1].type == 'SUBTRACT' or tail[1].type == 'MULTIPLY' or tail[1].type == 'DIVIDE':
+        if PRECEDENCE[head.value] > PRECEDENCE[tail[1].value]:
+            test = BinaryOperator(lhs, head, Number(tail[0]))
+            nextBinaryOperator = parseBinaryOperator(test, tail[1:])
+            return nextBinaryOperator
+        else:
+            nextBinaryOperator = parseBinaryOperator(Number(tail[0]), tail[1:])
+            return BinaryOperator(lhs, head, nextBinaryOperator[0]), nextBinaryOperator[1]
 
-    else: # if head is add or subtract do this, if head is multiply or divide: lhs, head, Number(tail...) en dan verder callen (,parseGeneral????)
-        nextBinaryOperator = parseBinaryOperator(Number(tail[0]), tail[1:])
-        return BinaryOperator(lhs, head, nextBinaryOperator[0]), nextBinaryOperator[1]
+    else:
+        return Error('Invalid syntax', head.line, head.position)
 
 def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, BinaryOperator]:
     if len(tokenList) > 0:
@@ -174,7 +179,7 @@ def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, B
         elif head.type == 'NUMBER' and prev != []:
             result = Error('Syntax error', prev[0].value.line, prev[0].value.position)
 
-        elif head.type == 'ADD' or head.type == 'SUBTRACT':
+        elif head.type == 'ADD' or head.type == 'SUBTRACT' or head.type == 'MULTIPLY' or head.type == 'DIVIDE':
             lhs = prev.pop()
             expression = parseBinaryOperator(lhs, tokenList)
             list: List[Token] = expression[1]
