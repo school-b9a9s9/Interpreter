@@ -128,12 +128,8 @@ class AST():
     pass
 
 class Statement(AST):
-    def __init__(self, expressions):
+    def __init__(self, expressions: List[AST]):
         self.expressions = expressions
-
-class Block(AST):
-    def __init__(self, statements: Statement):
-        self.statements = statements
 
 class Number(AST):
     def __init__(self, value: Token):
@@ -157,15 +153,16 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
 
     elif tail[1].type == 'END':
         if len(tail[2:]):
-            return BinaryOperator(lhs, head, Number(tail[0])), parseGeneral(tail[2:])
+             return BinaryOperator(lhs, head, Number(tail[0])), tail[2:]
         else:
-            return BinaryOperator(lhs, head, Number(tail[0]))
+            return BinaryOperator(lhs, head, Number(tail[0])), tail[1:]
 
     elif tail[1].type != 'ADD' and tail[1].type != 'SUBTRACT' and tail[1].type != 'MULTIPLY' and tail[1].type != 'DIVIDE':
         return Error('Invalid syntax', head.line, head.position)
 
     else: # if head is add or subtract do this, if head is multiply or divide: lhs, head, Number(tail...) en dan verder callen (,parseGeneral????)
-        return BinaryOperator(lhs, head, parseGeneral(tail))
+        nextBinaryOperator = parseBinaryOperator(Number(tail[0]), tail[1:])
+        return BinaryOperator(lhs, head, nextBinaryOperator[0]), nextBinaryOperator[1]
 
 def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, BinaryOperator]:
     if len(tokenList) > 0:
@@ -179,9 +176,11 @@ def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, B
 
         elif head.type == 'ADD' or head.type == 'SUBTRACT':
             lhs = prev.pop()
-            result = parseBinaryOperator(lhs, tokenList)
+            expression = parseBinaryOperator(lhs, tokenList)
+            list: List[Token] = expression[1]
+            result = expression[0], parseGeneral(list)
         else:
-            result = None # TODO
+            result = 'EOF' # TODO
 
     else:
         result = None # TODO
@@ -199,3 +198,4 @@ def parse(tokenList: List[Token], prev = None):
 #     print(i)
 
 print(parse(lex(sourceCode)))
+# parse(lex(sourceCode))
