@@ -148,23 +148,29 @@ class BinaryOperator(AST):
 def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, BinaryOperator]]:
     # tokenlist is tokens after the +
     head, *tail = tokenList
+
     if tail[0].type != 'NUMBER' and tail[0].type != 'IDENTIFIER' and tail[0].type != 'BLOCK':
         return Error('Invalid syntax', head.line, head.position)
 
     elif tail[1].type == 'END':
-        if len(tail[2:]):
-             return BinaryOperator(lhs, head, Number(tail[0])), tail[2:]
+        if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
+            newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, BinaryOperator(lhs.right, head, Number(tail[0])))
+            if len(tail[2:]):
+                return newBinaryOperator, tail[2:]
+            else:
+                return newBinaryOperator, tail[1:]
         else:
-            return BinaryOperator(lhs, head, Number(tail[0])), tail[1:]
+            newBinaryOperator = BinaryOperator(lhs, head, Number(tail[0]))
+            return newBinaryOperator, tail[1:]
 
     elif tail[1].type == 'ADD' or tail[1].type == 'SUBTRACT' or tail[1].type == 'MULTIPLY' or tail[1].type == 'DIVIDE':
-        if PRECEDENCE[head.value] > PRECEDENCE[tail[1].value]:
-            test = BinaryOperator(lhs, head, Number(tail[0]))
-            nextBinaryOperator = parseBinaryOperator(test, tail[1:])
-            return nextBinaryOperator
+        if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
+                newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, parseBinaryOperator(lhs.right, tokenList)[0])
+                return newBinaryOperator, tail[2:]
         else:
-            nextBinaryOperator = parseBinaryOperator(Number(tail[0]), tail[1:])
-            return BinaryOperator(lhs, head, nextBinaryOperator[0]), nextBinaryOperator[1]
+            newBinaryOperator = BinaryOperator(lhs, head, Number(tail[0]))
+            nextBinaryOperator = parseBinaryOperator(newBinaryOperator, tail[1:])
+            return nextBinaryOperator
 
     else:
         return Error('Invalid syntax', head.line, head.position)
