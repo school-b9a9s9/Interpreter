@@ -38,7 +38,7 @@ def getTokenType(value: str) -> str:
         'MULTIPLY'          : r'[*]',
         'DIVIDE'            : r'[/]',
         'SUBTRACT'          : r'[-]',
-        'ASSIGN/COMPARE'    : r'[=]',
+        'ASSIGN'           : r'[=]',
         'BLOCK'             : r'[()]',
         'END'               : r';',
         'IF'                : r'^if$',
@@ -137,6 +137,19 @@ class Number(AST):
     def __repr__(self):
         return 'Number(' + str(self.value.value) + ')'
 
+class Identifier(AST):
+    def __init__(self, value: Token):
+        self.value = value
+    def __repr__(self):
+        return 'Identifier(' + str(self.value.value) + ')'
+
+class Assign(AST):
+    def __init__(self, variable: Identifier, value: AST):
+        self.variable = variable
+        self.value = value
+    def __repr__(self):
+        return 'Assign(' + str(self.variable) + '=' + str(self.value) + ')'
+
 class BinaryOperator(AST):
     def __init__(self, left: AST, operator: Token, right: AST):
         self.left = left
@@ -145,6 +158,9 @@ class BinaryOperator(AST):
     def __repr__(self):
         return 'BinaryOperator{ ' + str(self.left) + ' ' + str(self.operator.value) + ' ' + str(self.right) + ' }'
 
+# ---------------------------------------------
+# Parse functions
+# ---------------------------------------------
 def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, BinaryOperator]]:
     # tokenlist is tokens after the +
     head, *tail = tokenList
@@ -165,8 +181,9 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
 
     elif tail[1].type == 'ADD' or tail[1].type == 'SUBTRACT' or tail[1].type == 'MULTIPLY' or tail[1].type == 'DIVIDE':
         if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
-                newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, parseBinaryOperator(lhs.right, tokenList)[0])
-                return newBinaryOperator, tail[2:]
+            nextBinaryOperator = parseBinaryOperator(lhs.right, tokenList)
+            newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0])
+            return newBinaryOperator, nextBinaryOperator[1]
         else:
             newBinaryOperator = BinaryOperator(lhs, head, Number(tail[0]))
             nextBinaryOperator = parseBinaryOperator(newBinaryOperator, tail[1:])
@@ -175,33 +192,63 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
     else:
         return Error('Invalid syntax', head.line, head.position)
 
-def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, BinaryOperator]:
+
+def parseAssign(lhs: AST, tokenlist: List[Token]) -> Tuple[Assign, AST]:
+    head, *tail = tokenlist
+
+    variable: Identifier = lhs
+    rhs: Union[List[Union[AST, List[Token]]], Error] = parseGeneral(tokenlist)
+    result: Assign = Assign(variable, rhs[0])
+    return result, rhs[1]
+
+def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, AST]:
     if len(tokenList) > 0:
         head, *tail = tokenList
-
-        if head.type == 'NUMBER' and prev == []:
+        if head.type == 'NUMBER' and not len(prev):
             prev.append(Number(head))
             result = parseGeneral(tail, prev)
         elif head.type == 'NUMBER' and prev != []:
             result = Error('Syntax error', prev[0].value.line, prev[0].value.position)
 
+        elif head.type == 'IDENTIFIER':
+            if not len(prev):
+                prev.append(Identifier(head))
+                expression = parseGeneral(tail, prev)
+                result = expression
+            else:
+                result = Error('expected operation or assingment', head.line, head.position)
+
         elif head.type == 'ADD' or head.type == 'SUBTRACT' or head.type == 'MULTIPLY' or head.type == 'DIVIDE':
-            lhs = prev.pop()
-            expression = parseBinaryOperator(lhs, tokenList)
-            list: List[Token] = expression[1]
-            result = expression[0], parseGeneral(list)
+            if len(prev):
+                lhs = prev.pop()
+                expression = parseBinaryOperator(lhs, tokenList)
+                result = expression
+            else:
+                result = Error('Expected left hand side of operator', head.line, head.position)
+
+        elif head.type == 'ASSIGN':
+            if len(prev):
+                variable = prev.pop()
+                expression = parseAssign(variable, tail)
+                result = expression
+
+        elif head.type == 'END':
+            return parseGeneral(tail)
+
         else:
             result = 'EOF' # TODO
 
     else:
-        result = None # TODO
+        result = 'EOF' # TODO
 
     return result
 
-def parse(tokenList: List[Token], prev = None):
-    result =  parseGeneral(tokenList)
-    return result
-
+def parse(tokenList: List[Token]):
+    result: Union[AST, List[Token]] =  parseGeneral(tokenList)
+    if len(result) > 1 and len(result[1]) > 1:
+        return result[0], parse(result[1])
+    else:
+        return result[0]
 # ---------------------------------------------
 # Run/Debug
 # ---------------------------------------------
