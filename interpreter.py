@@ -193,9 +193,7 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
         return Error('Invalid syntax', head.line, head.position)
 
 
-def parseAssign(lhs: AST, tokenlist: List[Token]) -> Tuple[Assign, AST]:
-    head, *tail = tokenlist
-
+def parseAssign(lhs: AST, tokenlist: List[Token]) -> Tuple[Assign, List[Token]]:
     variable: Identifier = lhs
     rhs: Union[List[Union[AST, List[Token]]], Error] = parseGeneral(tokenlist)
     result: Assign = Assign(variable, rhs[0])
