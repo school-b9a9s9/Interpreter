@@ -32,6 +32,7 @@ class Token():
 # Lexer
 # ---------------------------------------------
 
+# This function returns a the token-type of a certain string
 def getTokenType(value: str) -> str:
     tokenTypes = {
         'ADD'               : r'[+]',
@@ -53,7 +54,8 @@ def getTokenType(value: str) -> str:
 
 
 # --------Vraag: moet ik in deze functie definitie nou iets zeggen over getTokenType of niet?-------
-# createToken :: str, Tuple[int,int] -> Callable[List[Token]] -> Union[List[Token], None]
+# This function creates a token (using getTokenType) and returns a function that adds that token to a list.
+# createToken :: str -> Tuple[int,int] -> Callable[List[Token]] -> Union[List[Token], None]
 def createToken(value: str, position: Tuple[int, int]) -> Union[Callable[[List[Token]], List[Token]], Callable[[List[Token]], None]]:
     def addTokenToList(tokenList):
         tokenList.append(token)
@@ -70,6 +72,7 @@ def createToken(value: str, position: Tuple[int, int]) -> Union[Callable[[List[T
         token = Token(getTokenType(value), value, startPosition[0], startPosition[1])
     return addTokenToList
 
+# This function returns a function to update to either a newline, or a next character.
 def updateCurrentPosition(currentCharacter) -> Callable[[Tuple[int, int]], Tuple[int, int]]:
     def newLine(lastPosition: Tuple[int, int]) -> Tuple[int, int]:
         newPosition = lastPosition[0] + 1, 1
@@ -84,6 +87,7 @@ def updateCurrentPosition(currentCharacter) -> Callable[[Tuple[int, int]], Tuple
     else:
         return nextCharacter
 
+# This function converts the sourcecode to tokens.
 # lex :: str -> List[Token]
 def lex(sourceCode: str, s: str = '', currentPosition: Tuple[int, int] = (1, 1)) -> List[Token]: # sourceCode: code, s: not-tokens to be converted a token
     head, *tail = sourceCode
@@ -162,7 +166,6 @@ class BinaryOperator(AST):
 # Parse functions
 # ---------------------------------------------
 def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, BinaryOperator]]:
-    # tokenlist is tokens after the +
     head, *tail = tokenList
 
     if tail[0].type != 'NUMBER' and tail[0].type != 'IDENTIFIER' and tail[0].type != 'BLOCK':
