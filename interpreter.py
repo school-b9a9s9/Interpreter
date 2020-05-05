@@ -238,7 +238,8 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Tuple[Block, L
 
     return result
 
-def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Tuple[Tuple[AST], List[Token]]:
+def parseGeneral(tokenList: List[Token], last: List[AST] = []) -> Tuple[Tuple[AST], List[Token]]:
+    prev = last.copy()
     if len(tokenList) > 0:
         head, *tail = tokenList
         if head.type == 'NUMBER' and not len(prev):
@@ -274,7 +275,11 @@ def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Tuple[Tuple[AS
             result = parseBlock(tokenList)
 
         elif head.type == 'END':
-            result = parseGeneral(tail)
+            if len(prev):
+                result = prev, tail
+
+            else:
+                result = parseGeneral(tail)
 
         else:
             result = 'EOF' # TODO
