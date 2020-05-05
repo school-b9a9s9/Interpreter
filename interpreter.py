@@ -131,9 +131,11 @@ PRECEDENCE = {
 class AST():
     pass
 
-class Statement(AST):
+class Block(AST):
     def __init__(self, expressions: List[AST]):
         self.expressions = expressions
+    def __repr__(self):
+        return 'Block[' + str(self.expressions) + ']'
 
 class Number(AST):
     def __init__(self, value: Token):
@@ -191,6 +193,9 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
             newBinaryOperator = BinaryOperator(lhs, head, Number(tail[0]))
             nextBinaryOperator = parseBinaryOperator(newBinaryOperator, tail[1:])
             return nextBinaryOperator
+    elif tail[0].type == 'BLOCK':
+        nextBlock = parseBlock(tail)
+        return parseBinaryOperator(BinaryOperator(lhs, head, nextBlock[0]), nextBlock[1])
 
     else:
         return Error('Invalid syntax', head.line, head.position)
@@ -201,6 +206,37 @@ def parseAssign(lhs: AST, tokenlist: List[Token]) -> Tuple[Assign, List[Token]]:
     rhs: Union[List[Union[AST, List[Token]]], Error] = parseGeneral(tokenlist)
     result: Assign = Assign(variable, rhs[0])
     return result, rhs[1]
+
+def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Tuple[Block, List[Token]]:
+    head, *tail = tokenList
+    tokens = prev
+
+    if type(head) == Block:
+
+        result = head
+
+    elif head.value == '(':
+        if len(tokens) == 0:
+            result = parseBlock(tail, [head])
+        else:
+            test = parseBlock(tail, [head])
+            tokens.append(test[0])
+            tokens += test[1]
+            result = parseGeneral(tokens)
+    elif head.value == ')':
+        if tokens[0].value == '(':
+            tokens.append(Token('END', ';', head.line, head.position))
+            expressions = parse(tokens[1:])
+            result = Block(expressions[:-1]), tail
+        else:
+            print('ohooh')
+    elif head == 'EOF':
+        result = Error('Expected \')\'', head.line, head.position)
+    else:
+        tokens.append(head)
+        result = parseBlock(tail, tokens)
+
+    return result
 
 def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Tuple[Tuple[AST], List[Token]]:
     if len(tokenList) > 0:
@@ -232,6 +268,10 @@ def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Tuple[Tuple[AS
                 variable = prev.pop()
                 expression = parseAssign(variable, tail)
                 result = expression[0], expression[1]
+
+        elif head.type == 'BLOCK':
+            print('in block')
+            result = parseBlock(tokenList)
 
         elif head.type == 'END':
             result = parseGeneral(tail)
