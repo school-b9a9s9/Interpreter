@@ -152,7 +152,7 @@ class Assign(AST):
         self.variable = variable
         self.value = value
     def __repr__(self):
-        return 'Assign(' + str(self.variable) + '=' + str(self.value) + ')'
+        return 'Assign{' + str(self.variable) + '=' + str(self.value) + '}'
 
 class BinaryOperator(AST):
     def __init__(self, left: AST, operator: Token, right: AST):
@@ -202,7 +202,7 @@ def parseAssign(lhs: AST, tokenlist: List[Token]) -> Tuple[Assign, List[Token]]:
     result: Assign = Assign(variable, rhs[0])
     return result, rhs[1]
 
-def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, AST]:
+def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Tuple[Tuple[AST], List[Token]]:
     if len(tokenList) > 0:
         head, *tail = tokenList
         if head.type == 'NUMBER' and not len(prev):
@@ -223,7 +223,7 @@ def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, A
             if len(prev):
                 lhs = prev.pop()
                 expression = parseBinaryOperator(lhs, tokenList)
-                result = expression
+                result = expression[0], expression[1]
             else:
                 result = Error('Expected left hand side of operator', head.line, head.position)
 
@@ -231,10 +231,10 @@ def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, A
             if len(prev):
                 variable = prev.pop()
                 expression = parseAssign(variable, tail)
-                result = expression
+                result = expression[0], expression[1]
 
         elif head.type == 'END':
-            return parseGeneral(tail)
+            result = parseGeneral(tail)
 
         else:
             result = 'EOF' # TODO
@@ -245,11 +245,12 @@ def parseGeneral(tokenList: List[Token], prev: List[AST] = []) -> Union[Error, A
     return result
 
 def parse(tokenList: List[Token]):
-    result: Union[AST, List[Token]] =  parseGeneral(tokenList)
+    result: Tuple[Tuple[AST], List[Token]] =  parseGeneral(tokenList)
     if len(result) > 1 and len(result[1]) > 1:
-        return result[0], parse(result[1])
+        nextResult = parse(result[1])
+        return (result[0],) + nextResult
     else:
-        return result[0]
+        return result[0], 'EOF'
 # ---------------------------------------------
 # Run/Debug
 # ---------------------------------------------
