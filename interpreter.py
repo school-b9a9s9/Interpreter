@@ -167,35 +167,45 @@ class BinaryOperator(AST):
 # ---------------------------------------------
 # Parse functions
 # ---------------------------------------------
-def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, BinaryOperator]]:
+def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, BinaryOperator], Tuple[BinaryOperator, List[Token]]]:
     head, *tail = tokenList
-
-    if tail[0].type != 'NUMBER' and tail[0].type != 'IDENTIFIER' and tail[0].type != 'BLOCK':
+    # return Error if following character is not a block, number or identifier
+    if type(tail[0]) != Block and tail[0].type != 'NUMBER' and tail[0].type != 'IDENTIFIER' and tail[0].type != 'BLOCK':
         return Error('Invalid syntax', head.line, head.position)
 
+    # if this is the last operator return it with the tail, else return a binary operator with the next binary operator
     elif tail[1].type == 'END':
         if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
-            newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, BinaryOperator(lhs.right, head, Number(tail[0])))
+            newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, BinaryOperator(lhs.right, head, parseGeneral(tail[0:2])[0][0]))
             if len(tail[2:]):
                 return newBinaryOperator, tail[2:]
             else:
                 return newBinaryOperator, tail[1:]
         else:
-            newBinaryOperator = BinaryOperator(lhs, head, Number(tail[0]))
+            parsedRhs = parseGeneral(tail[0:2])[0][0]
+            newBinaryOperator = BinaryOperator(lhs, head, parsedRhs)
             return newBinaryOperator, tail[1:]
 
+    # if the next operator has a higher precedence return a binary operator of lhs(.left) and the next binary operator
+    # else return the next binary operator with the current binary operator as lhs
     elif tail[1].type == 'ADD' or tail[1].type == 'SUBTRACT' or tail[1].type == 'MULTIPLY' or tail[1].type == 'DIVIDE':
         if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
             nextBinaryOperator = parseBinaryOperator(lhs.right, tokenList)
             newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0])
             return newBinaryOperator, nextBinaryOperator[1]
         else:
-            newBinaryOperator = BinaryOperator(lhs, head, Number(tail[0]))
+            parsedRhs = parseGeneral([tail[0], Token('END', ';', head.line, head.position + 1)])[0]
+            newBinaryOperator = BinaryOperator(lhs, head, parsedRhs) # create BinOp of lhs, head and parsed next token.
             nextBinaryOperator = parseBinaryOperator(newBinaryOperator, tail[1:])
             return nextBinaryOperator
+
+    # if the next token is a block, parse the block and return a binary operator with that block as rhs
     elif tail[0].type == 'BLOCK':
         nextBlock = parseBlock(tail)
-        return parseBinaryOperator(BinaryOperator(lhs, head, nextBlock[0]), nextBlock[1])
+        if len(nextBlock[1]) > 1:
+            return parseBinaryOperator(BinaryOperator(lhs, head, nextBlock[0]), nextBlock[1])
+        else:
+            return BinaryOperator(lhs, head, nextBlock[0]), []
 
     else:
         return Error('Invalid syntax', head.line, head.position)
@@ -209,19 +219,19 @@ def parseAssign(lhs: AST, tokenlist: List[Token]) -> Tuple[Assign, List[Token]]:
 
 def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Tuple[Block, List[Token]]:
     head, *tail = tokenList
-    tokens = prev
+    tokens = prev.copy()
 
     if type(head) == Block:
-
-        result = head
+        tokens.append(head)
+        result = parseBlock(tail, tokens)
 
     elif head.value == '(':
         if len(tokens) == 0:
             result = parseBlock(tail, [head])
         else:
-            test = parseBlock(tail, [head])
-            tokens.append(test[0])
-            tokens += test[1]
+            parsedBlock = parseBlock(tail, [head])
+            tokens.append(parsedBlock[0])
+            tokens += parsedBlock[1]
             result = parseGeneral(tokens)
     elif head.value == ')':
         if tokens[0].value == '(':
@@ -242,7 +252,11 @@ def parseGeneral(tokenList: List[Token], last: List[AST] = []) -> Tuple[Tuple[AS
     prev = last.copy()
     if len(tokenList) > 0:
         head, *tail = tokenList
-        if head.type == 'NUMBER' and not len(prev):
+
+        if type(head) == Block:
+            result = head, tail
+
+        elif head.type == 'NUMBER' and not len(prev):
             prev.append(Number(head))
             result = parseGeneral(tail, prev)
         elif head.type == 'NUMBER' and prev != []:
@@ -271,7 +285,6 @@ def parseGeneral(tokenList: List[Token], last: List[AST] = []) -> Tuple[Tuple[AS
                 result = expression[0], expression[1]
 
         elif head.type == 'BLOCK':
-            print('in block')
             result = parseBlock(tokenList)
 
         elif head.type == 'END':
