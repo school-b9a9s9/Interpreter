@@ -176,7 +176,7 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
     # if this is the last operator return it with the tail, else return a binary operator with the next binary operator
     elif tail[1].type == 'END':
         if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
-            nextParsedToken = parseGeneral(tail[0:2])[0][0]
+            nextParsedToken = parseExpression(tail[0:2])[0][0]
             if type(nextParsedToken) == Error:
                 nextParsedToken: Error
                 return nextParsedToken
@@ -187,7 +187,7 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
             else:
                 return newBinaryOperator, tail[1:]
         else:
-            parsedRhs = parseGeneral(tail[0:2])[0][0]
+            parsedRhs = parseExpression(tail[0:2])[0][0]
             if type(parsedRhs) == Error:
                 parsedRhs: Error
                 return parsedRhs
@@ -208,7 +208,7 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
                 newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0])
                 return newBinaryOperator, nextBinaryOperator[1]
         else:
-            parsedRhs = parseGeneral([tail[0], Token('END', ';', head.line, head.position + 1)])[0]
+            parsedRhs = parseExpression([tail[0], Token('END', ';', head.line, head.position + 1)])[0]
             if type(parsedRhs) == Error:
                 parsedRhs: Error
                 return parsedRhs
@@ -232,7 +232,7 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
 
 def parseAssign(lhs: AST, tokenlist: List[Token]) -> Union[Error, Tuple[Assign, List[Token]] ]:
     variable: Identifier = lhs
-    rhs: Union[List[Union[AST, List[Token]]], Error] = parseGeneral(tokenlist)
+    rhs: Union[List[Union[AST, List[Token]]], Error] = parseExpression(tokenlist)
     if type(rhs) == Error:
         rhs: Error
         return rhs
@@ -258,7 +258,7 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
             else:
                 tokens.append(parsedBlock[0])
                 tokens += parsedBlock[1]
-                result = parseGeneral(tokens)
+                result = parseExpression(tokens)
     elif head.value == ')':
         if tokens[0].value == '(':
             tokens.append(Token('END', ';', head.line, head.position))
@@ -277,7 +277,7 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
 
     return result
 
-def parseGeneral(tokenList: List[Token], last: List[AST] = []) -> Union[Error, Tuple[Tuple[AST], List[Token]] ]:
+def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error, Tuple[Tuple[AST], List[Token]]]:
     prev = last.copy()
     if len(tokenList) > 0:
         head, *tail = tokenList
@@ -287,14 +287,14 @@ def parseGeneral(tokenList: List[Token], last: List[AST] = []) -> Union[Error, T
 
         elif head.type == 'NUMBER' and not len(prev):
             prev.append(Number(head))
-            result = parseGeneral(tail, prev)
+            result = parseExpression(tail, prev)
         elif head.type == 'NUMBER' and prev != []:
             result = Error('Syntax error', prev[0].value.line, prev[0].value.position) # TODO (wat voor error?)
 
         elif head.type == 'IDENTIFIER':
             if not len(prev):
                 prev.append(Identifier(head))
-                expression = parseGeneral(tail, prev)
+                expression = parseExpression(tail, prev)
                 result = expression
             else:
                 result = Error('expected operation or assingment', head.line, head.position)
@@ -321,7 +321,7 @@ def parseGeneral(tokenList: List[Token], last: List[AST] = []) -> Union[Error, T
                 result = prev, tail
 
             else:
-                result = parseGeneral(tail)
+                result = parseExpression(tail)
 
         else:
             result = 'EOF' # TODO
@@ -332,7 +332,7 @@ def parseGeneral(tokenList: List[Token], last: List[AST] = []) -> Union[Error, T
     return result
 
 def parse(tokenList: List[Token]):
-    result: Tuple[Tuple[AST], List[Token]] =  parseGeneral(tokenList)
+    result: Tuple[Tuple[AST], List[Token]] =  parseExpression(tokenList)
     if type(result) == Error:
         return result
     elif len(result) > 1 and len(result[1]) > 1:
