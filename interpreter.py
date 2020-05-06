@@ -42,7 +42,8 @@ def getTokenType(value: str) -> str:
         'MULTIPLY'          : r'[*]',
         'DIVIDE'            : r'[/]',
         'SUBTRACT'          : r'[-]',
-        'ASSIGN'           : r'[=]',
+        'COMPARE'           : r'[=<>]',
+        'ASSIGN'            : r'[=]',
         'BLOCK'             : r'[()]',
         'END'               : r';',
         'IF'                : r'^if$',
@@ -167,6 +168,8 @@ class BinaryOperator(AST):
 # ---------------------------------------------
 # Parse functions
 # ---------------------------------------------
+
+# This function parses binary operators. where head is the operator
 def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, List[Token]]]:
     head, *tail = tokenList
     # return Error if following character is not a block, number or identifier
@@ -197,7 +200,7 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
 
     # if the next operator has a higher precedence return a binary operator of lhs(.left) and the next binary operator
     # else return the next binary operator with the current binary operator as lhs
-    elif tail[1].type == 'ADD' or tail[1].type == 'SUBTRACT' or tail[1].type == 'MULTIPLY' or tail[1].type == 'DIVIDE':
+    elif tail[1].type == 'ADD' or tail[1].type == 'SUBTRACT' or tail[1].type == 'MULTIPLY' or tail[1].type == 'DIVIDE' or tail[1].type == 'COMPARE':
         if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
             lhs: BinaryOperator
             nextBinaryOperator = parseBinaryOperator(lhs.right, tokenList)
@@ -299,7 +302,7 @@ def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error
             else:
                 result = Error('expected operation or assingment', head.line, head.position)
 
-        elif head.type == 'ADD' or head.type == 'SUBTRACT' or head.type == 'MULTIPLY' or head.type == 'DIVIDE':
+        elif head.type == 'ADD' or head.type == 'SUBTRACT' or head.type == 'MULTIPLY' or head.type == 'DIVIDE' or head.type == 'COMPARE':
             if len(prev):
                 lhs = prev.pop()
                 expression = parseBinaryOperator(lhs, tokenList)
