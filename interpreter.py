@@ -48,7 +48,7 @@ def getTokenType(value: str) -> str:
         'ASSIGN'            : r'[=]',
         'BLOCK'             : r'[()]',
         'END'               : r';',
-        'IF'                : r'^if$',
+        'IF'                : r'^aint$',
         'TRUE'              : r'^yea$',
         'FALSE'             : r'^nah$',
         'NUMBER'            : r'^[0-9]*$',
@@ -486,9 +486,10 @@ def visitBlock(node: Block, originalState: State):
     firstNode = visit(head, originalState)
     if len(tail) > 0:
         if type(firstNode) == State:
-            return visit(Block(tail), originalState)
+            nextParsedBlock = visit(Block(tail), firstNode)
+            return nextParsedBlock
         else:
-            return (firstNode[0],) + visit(Block(tail), originalState)
+            return (firstNode[0],) + visit(Block(tail), firstNode[1])
 
     return firstNode
 
@@ -512,7 +513,7 @@ def visit(node: AST, originalState: State):
         node: Block
         return visitBlock(node, originalState)
     else:
-        print('dit gaat fout')
+        print('dit gaat fout(node niet bekend: ' + str(node))
         return node, originalState # TODO check for correct behaviour
 
 
@@ -525,11 +526,11 @@ def interpret(ast: List[AST], originalState: State) -> Tuple[Union[int, State], 
         if type(currentExpression) == State:
             return interpret(tail, currentExpression)
         else:
-            nextExpression = interpret(tail, currentExpression[1])
+            nextExpression = interpret(tail, currentExpression[-1])
             if type(nextExpression) == State:
-                return (currentExpression[0],) + (nextExpression,)
+                return currentExpression[:-1] + (nextExpression,)
             else:
-                return (currentExpression[0],) + nextExpression
+                return currentExpression[:-1] + nextExpression
         # return interpret(tail, newState), visit(head, newState)
     elif tail[0] == 'EOF':
         return visit(head, newState)
