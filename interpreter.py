@@ -1,5 +1,7 @@
 from typing import List, Tuple, Callable, Union
+from copy import deepcopy
 import re
+import operator
 
 # Reading input file
 inputFile = open("input.txt", "r")
@@ -42,11 +44,13 @@ def getTokenType(value: str) -> str:
         'MULTIPLY'          : r'[*]',
         'DIVIDE'            : r'[/]',
         'SUBTRACT'          : r'[-]',
-        'COMPARE'           : r'[=<>]',
+        'COMPARE'           : r'[<>]',
         'ASSIGN'            : r'[=]',
         'BLOCK'             : r'[()]',
         'END'               : r';',
         'IF'                : r'^if$',
+        'TRUE'              : r'^yea$',
+        'FALSE'             : r'^nah$',
         'NUMBER'            : r'^[0-9]*$',
         'IDENTIFIER'        : r'\w'             # Has to be last
     }
@@ -157,6 +161,14 @@ class Assign(AST):
     def __repr__(self):
         return 'Assign{' + str(self.variable) + '=' + str(self.value) + '}'
 
+class IfStatement(AST):
+    def __init__(self, condition: Block, ifTrue: Block = None, ifFalse: Block = None):
+        self.condition = condition
+        self.ifTrue = ifTrue
+        self.ifFalse = ifFalse
+    def __repr__(self):
+        return 'if[' + str(self.condition) + ': ifTrue(' + str(self.ifTrue) + '), ifFalse(' + str(self.ifFalse) + ')]'
+
 class BinaryOperator(AST):
     def __init__(self, left: AST, operator: Token, right: AST):
         self.left = left
@@ -208,10 +220,15 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
                 nextBinaryOperator: Error
                 return nextBinaryOperator
             else:
-                newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0])
-                return newBinaryOperator, nextBinaryOperator[1]
+                nextBinaryOperator[0]: BinaryOperator
+                if PRECEDENCE[nextBinaryOperator[0].operator.value] > PRECEDENCE[lhs.operator.value]:
+                    newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0])
+                    return newBinaryOperator, nextBinaryOperator[1]
+                else:
+                    newBinaryOperator = BinaryOperator(BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0].left), nextBinaryOperator[0].operator, nextBinaryOperator[0].right)
+                    return newBinaryOperator, nextBinaryOperator[1]
         else:
-            parsedRhs = parseExpression([tail[0], Token('END', ';', head.line, head.position + 1)])[0]
+            parsedRhs = parseExpression([tail[0], Token('END', ';', head.line, head.position + 1)])[0][0]
             if type(parsedRhs) == Error:
                 parsedRhs: Error
                 return parsedRhs
@@ -239,6 +256,9 @@ def parseAssign(lhs: AST, tokenlist: List[Token]) -> Union[Error, Tuple[Assign, 
     if type(rhs) == Error:
         rhs: Error
         return rhs
+    elif type(rhs[0]) == list:
+        result: Assign = Assign(variable, rhs[0][0])
+        return result, rhs[1]
     else:
         result: Assign = Assign(variable, rhs[0])
         return result, rhs[1]
@@ -280,6 +300,52 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
 
     return result
 
+def parseIf(tokenList: List[Token]):
+    head, *tail = tokenList
+
+    if head.type == 'IF' and tail[0].type == 'BLOCK':
+        parsedBlock = parseBlock(tail)
+        condition = parsedBlock[0]
+
+        parsedFirstStatement = parseIf(parsedBlock[1])
+        if parsedFirstStatement == None:
+            return Error('Expected yea or nah block after if statement', head.line, head.position)
+
+        parsedFirstStatement: Tuple[IfStatement, List[Token]]
+        parsedSecondStatement = parseIf(parsedFirstStatement[1])
+
+        if parsedSecondStatement == None:
+            result = IfStatement(condition, parsedFirstStatement[0].ifTrue, parsedFirstStatement[0].ifFalse), parsedFirstStatement[1]
+        elif parsedFirstStatement[0].ifTrue == None and parsedSecondStatement[0].ifFalse == None:   # if second was ifTrue and first was ifFalse
+            result = IfStatement(condition, parsedSecondStatement[0].ifTrue, parsedFirstStatement[0].ifFalse), parsedSecondStatement[1]
+        elif parsedSecondStatement[0].ifTrue == None and parsedFirstStatement[0].ifFalse == None:   # if first was ifTrue and second was ifFalse
+            result = IfStatement(condition, parsedFirstStatement[0].ifTrue, parsedSecondStatement[0].ifFalse), parsedSecondStatement[1]
+        else:
+            result = Error('Something went wrong with if statement', head.line, head.position)
+
+
+    elif head.type == 'IF' and tail[0].type != 'BLOCK':
+        result = Error('if statement needs to be followed by a code block', head.line, head.position)
+
+    elif head.type == 'TRUE':   # TODO Check if next = false
+        parsedBlock = parseBlock(tail)
+        ifTrue = parsedBlock[0]
+        result = IfStatement(Block([]), ifTrue), parsedBlock[1]
+
+    elif head.type == 'FALSE':  # TODO check if next = true
+        parsedBlock = parseBlock(tail)
+        ifFalse = parsedBlock[0]
+        result = IfStatement(Block([]), ifFalse=ifFalse), parsedBlock[1]
+
+    else:
+        result = None
+
+
+
+    return result
+
+
+
 def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error, Tuple[Tuple[AST], List[Token]]]:
     prev = last.copy()
     if len(tokenList) > 0:
@@ -316,6 +382,12 @@ def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error
                 expression = parseAssign(variable, tail)
                 result = expression
 
+        elif head.type == 'IF':
+            result = parseIf(tokenList)
+
+        elif head.type == 'TRUE' or head.type == 'FALSE':
+            result = Error('Expected if-statement', head.line, head.position)
+
         elif head.type == 'BLOCK':
             result = parseBlock(tokenList)
 
@@ -346,11 +418,133 @@ def parse(tokenList: List[Token]):
             return (result[0],) + nextResult
     else:
         return result[0], 'EOF'
+
+
+# ---------------------------------------------
+# Interpreter
+# ---------------------------------------------
+class State:
+    def __init__(self):
+        self.variables = {}
+        self.errors = []
+    def __repr__(self):
+        return 'State(Variables: ' + str(self.variables) + ', errors: ' + str(self.errors) +  ')'
+
+def visitNumber(node: Number, originalState: State) -> Tuple[int, State]:
+    return int(node.value.value), originalState
+
+def visitIdentifier(node: Identifier, originalState: State) -> Union[Tuple[None, State], Tuple[int, State]]:
+    newState = originalState
+    variableValue = originalState.variables.get(node.value.value)
+    if variableValue == None:
+        newState.errors.append(Error('Expected value', node.value.line, node.value.position))
+        return None, newState
+    else:
+        return variableValue, newState
+
+
+def visitAssign(node: Assign, originalState: State) -> State:
+    value = visit(node.value, originalState)
+    if value[0] == None:
+        newState = value[1]
+        return newState
+    else:
+        newState = originalState
+        newState.variables.update({node.variable.value.value : value[0]})
+        return newState
+
+
+def visitBinaryOperator(node: BinaryOperator, originalState: State) -> Tuple[int, State]:
+    newState = deepcopy(originalState)
+    lhs = visit(node.left, originalState)[0]    # TODO if visit Number changes state, this needs work
+    rhs = visit(node.right, originalState)[0]
+    operators = {
+        "+": operator.add,
+        "-": operator.sub,
+        "*": operator.mul,
+        "/": operator.truediv,
+        "<": operator.lt,
+        ">": operator.gt
+    }
+    operatorFunction = operators[node.operator.value]
+    if (type(lhs) == int or type(lhs) == float) and (type(rhs) == int or type(rhs) == float):
+        return operatorFunction(lhs, rhs), newState
+    else:
+        return Error('todo', 3, 4)    #TODO
+
+def visitIfStatement(node: IfStatement, originalState: State):
+    condition = visit(node.condition, originalState)
+    if condition[0] == True:
+        result = visit(node.ifTrue, originalState)
+    else:
+        result = visit(node.ifFalse, originalState)
+    return result
+
+def visitBlock(node: Block, originalState: State):
+    # voor elk item in een block. visit dat item
+    head, *tail = node.expressions
+    firstNode = visit(head, originalState)
+    if len(tail) > 0:
+        if type(firstNode) == State:
+            return visit(Block(tail), originalState)
+        else:
+            return (firstNode[0],) + visit(Block(tail), originalState)
+
+    return firstNode
+
+def visit(node: AST, originalState: State):
+    if type(node) == BinaryOperator:
+        node: BinaryOperator
+        return visitBinaryOperator(node, originalState)
+    elif type(node) == Number:
+        node: Number
+        return visitNumber(node, originalState)
+    elif type(node) == Assign:
+        node: Assign
+        return visitAssign(node, originalState)
+    elif type(node) == Identifier:
+        node: Identifier
+        return visitIdentifier(node, originalState)
+    elif type(node) == IfStatement:
+        node: IfStatement
+        return visitIfStatement(node, originalState)
+    elif type(node) == Block:
+        node: Block
+        return visitBlock(node, originalState)
+    else:
+        print('dit gaat fout')
+        return node, originalState # TODO check for correct behaviour
+
+
+def interpret(ast: List[AST], originalState: State) -> Tuple[Union[int, State], State]:
+    newState = deepcopy(originalState)
+    head, *tail = ast
+
+    if tail != 'EOF' and len(tail) > 1:
+        currentExpression = visit(head, newState)
+        if type(currentExpression) == State:
+            return interpret(tail, currentExpression)
+        else:
+            nextExpression = interpret(tail, currentExpression[1])
+            if type(nextExpression) == State:
+                return (currentExpression[0],) + (nextExpression,)
+            else:
+                return (currentExpression[0],) + nextExpression
+        # return interpret(tail, newState), visit(head, newState)
+    elif tail[0] == 'EOF':
+        return visit(head, newState)
+    else:
+        pass # has to return an error
+
+
+
 # ---------------------------------------------
 # Run/Debug
 # ---------------------------------------------
 # for i in (lex(sourceCode)):
 #     print(i)
 
-print(parse(lex(sourceCode)))
+originalState = State()
 # parse(lex(sourceCode))
+# print(parse(lex(sourceCode)))
+print(interpret(parse(lex(sourceCode)), originalState))
