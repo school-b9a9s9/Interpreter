@@ -2,10 +2,7 @@ from typing import List, Tuple, Callable, Union
 from copy import deepcopy
 import re
 import operator
-
-# Reading input file
-inputFile = open("input.txt", "r")
-sourceCode= inputFile.read()
+import sys
 
 # --------------------------------------------
 # Decorator
@@ -75,6 +72,7 @@ def getTokenType(value: str) -> str:
         'FALSE'             : r'^nah$',
         'WHILE'             : r'^whilst$',
         'EXECUTE'           : r'^execute$',
+        'PRINT'             : r'^display$',
         'NUMBER'            : r'^[0-9]*$',
         'IDENTIFIER'        : r'\w'             # Has to be last
     }
@@ -208,6 +206,12 @@ class BinaryOperator(AST):
     def __repr__(self):
         return 'BinaryOperator{ ' + str(self.left) + ' ' + str(self.operator.value) + ' ' + str(self.right) + ' }'
 
+class PrintStatement(AST):
+    def __init__(self, result: AST):
+        self.result = result
+    def __repr__(self):
+        return 'Print[' + str(self.result) + ']'
+
 # ---------------------------------------------
 # Parse functions
 # ---------------------------------------------
@@ -332,7 +336,7 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
         result = parseBlock(tail, tokens)
 
     return result
-
+@debug
 def parseWhile(tokenList: List[Token]):
     head, *tail = tokenList
 
@@ -433,6 +437,19 @@ def parseIf(tokenList: List[Token]):
 
     return result
 
+@debug
+def parsePrint(tokenList: List[Token]) -> Union[Error, Tuple[AST, List[Token]]]:
+    head, *tail = tokenList
+    if head.type == 'PRINT':
+        if type(tail[0]) == Block:
+            test = PrintStatement(tail[0]), tail[1:]
+            return test
+        elif tail[0].type == 'BLOCK':
+            parsedBlock, nextTail = parseBlock(tail)
+            return PrintStatement(parsedBlock), nextTail
+    else:
+        return Error('something went wrong with print', head.line, head.position)
+
 
 def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error, Tuple[Tuple[AST], List[Token]]]:
     prev = last.copy()
@@ -484,6 +501,9 @@ def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error
 
         elif head.type == 'BLOCK':
             result = parseBlock(tokenList)
+
+        elif head.type == 'PRINT':
+            result = parsePrint(tokenList)
 
         elif head.type == 'END':
             if len(prev):
@@ -602,7 +622,10 @@ def visitIfStatement(node: IfStatement, originalState: State):
             result = visit(node.ifFalse, condition[1])
         else:
             result = condition[1]
-    return result
+    if type(result) == State:
+        return result
+    else:
+        return result[-1]
 
 def visitBlock(node: Block, originalState: State):
     newState = deepcopy(originalState)
@@ -622,6 +645,13 @@ def visitBlock(node: Block, originalState: State):
             return result
 
     return firstNode
+
+def visitPrintStatement(node: PrintStatement, originalState: State):
+    result = visit(node.result, originalState)
+    if type(result) != State:
+        print(result[0])
+    return originalState
+
 
 @debug
 def visit(node: AST, originalState: State):
@@ -646,6 +676,8 @@ def visit(node: AST, originalState: State):
     elif type(node) == Block:
         node: Block
         return visitBlock(node, originalState)
+    elif type(node) == PrintStatement:
+        return visitPrintStatement(node, originalState)
     else:
         print('dit gaat fout(node niet bekend: ' + str(node))
         return node, originalState # TODO check for correct behaviour
@@ -679,14 +711,37 @@ def interpret(ast: List[AST], originalState: State) -> Union[State, Tuple[int, S
 # Run/Debug
 # ---------------------------------------------
 
+def run():
+    if len(sys.argv) == 1:
+        inputFile = open("input.txt", "r")
+        sourceCode = inputFile.read()
+    elif len(sys.argv) > 1 and sys.argv[1].endswith('.txt'):
+        inputFile = open(sys.argv[1], "r")
+        sourceCode = inputFile.read()
+    else:
+        test = ' '
+        sourceCode = test.join(sys.argv[1:])
 
-# for i in (lex(sourceCode)):
-#     print(i)
 
-originalState = State()
-# parse(lex(sourceCode))
-# print(parse(lex(sourceCode)))
-print(interpret(parse(lex(sourceCode)), originalState))
-print(interpret.getStats())
-print(visit.getStats())
+    originalState = State()
+    programResult = interpret(parse(lex(sourceCode)), originalState)
+    if type(programResult) == State:
+        programState = programResult
+    else:
+        *returnedValues, programState = programResult
+    print(programState)
+
+
+    # parse(lex(sourceCode))
+    # print(parse(lex(sourceCode)))
+    # print(interpret.getStats())
+    # print(visit.getStats())
+    # print(parsePrint.getStats())
+    # print(parseWhile.getStats())
+# Reading input file
+# inputFile = open("input.txt", "r")
+# sourceCode = inputFile.read()
+run()
+
+
 
