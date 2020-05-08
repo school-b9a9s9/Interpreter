@@ -51,6 +51,8 @@ def getTokenType(value: str) -> str:
         'IF'                : r'^aint$',
         'TRUE'              : r'^yea$',
         'FALSE'             : r'^nah$',
+        'WHILE'             : r'^whilst$',
+        'EXECUTE'           : r'^execute$',
         'NUMBER'            : r'^[0-9]*$',
         'IDENTIFIER'        : r'\w'             # Has to be last
     }
@@ -160,6 +162,13 @@ class Assign(AST):
         self.value = value
     def __repr__(self):
         return 'Assign{' + str(self.variable) + '=' + str(self.value) + '}'
+
+class WhileStatement(AST):
+    def __init__(self, condition: Block, ifTrue: Block):
+        self.condition = condition
+        self.ifTrue = ifTrue
+    def __repr__(self):
+        return 'While[' + str(self.condition) + ': ifTrue(' + str(self.ifTrue) + ')'
 
 class IfStatement(AST):
     def __init__(self, condition: Block, ifTrue: Block = None, ifFalse: Block = None):
@@ -300,6 +309,25 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
 
     return result
 
+def parseWhile(tokenList: List[Token]):
+    head, *tail = tokenList
+
+    if head.type == 'WHILE' and tail[0].type == 'BLOCK':
+        condition, tailAfterBlock = parseBlock(tail)
+        if tailAfterBlock[0].type == 'EXECUTE': # if first token in tail of parsed block is a EXECUTE token
+            ifTrue, tailAfterExecute = parseWhile(tailAfterBlock)
+            result = WhileStatement(condition, ifTrue), tailAfterExecute
+        else:
+            result = Error('Exprected execute statement after while', head.line, head.position)
+
+    elif head.type == 'EXECUTE' and tail[0].type == 'BLOCK':
+        result = parseBlock(tail)
+
+    else:
+        result = Error('Expected \'(\'', tail[0].line, tail[0].position)
+
+    return result
+
 def parseIf(tokenList: List[Token]):
     head, *tail = tokenList
 
@@ -388,6 +416,12 @@ def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error
         elif head.type == 'TRUE' or head.type == 'FALSE':
             result = Error('Expected if-statement', head.line, head.position)
 
+        elif head.type == 'WHILE':
+            result = parseWhile(tokenList)
+
+        elif head.type == 'EXECUTE':
+            result = Error('Expected while-statement', head.line, head.position)
+
         elif head.type == 'BLOCK':
             result = parseBlock(tokenList)
 
@@ -407,7 +441,7 @@ def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error
     return result
 
 def parse(tokenList: List[Token]):
-    result: Tuple[Tuple[AST], List[Token]] =  parseExpression(tokenList)
+    result: Tuple[Tuple[AST], List[Token]] = parseExpression(tokenList)
     if type(result) == Error:
         return result
     elif len(result) > 1 and len(result[1]) > 1:
@@ -470,7 +504,29 @@ def visitBinaryOperator(node: BinaryOperator, originalState: State) -> Tuple[int
     if (type(lhs) == int or type(lhs) == float) and (type(rhs) == int or type(rhs) == float):
         return operatorFunction(lhs, rhs), newState
     else:
-        return Error('todo', 3, 4)    #TODO
+        return Error('Expected Number before operator' , node.operator.line, node.operator.position)    #TODO
+
+def visitWhileStatement(node: WhileStatement, originalState: State):
+    condition = visit(node.condition, originalState)
+    if type(condition) == Error:
+        newState = deepcopy(originalState)
+        newState.errors.append(condition)
+        result = newState
+
+    elif condition[0] == True:
+        result = visit(node.ifTrue, originalState)
+        if type(result) == State:
+            result = visitWhileStatement(node, result)
+        else:
+            nextLoop = visitWhileStatement(node, result[-1])
+            if type(nextLoop) == State:
+                result = result[:-1] + (nextLoop,)
+            else:
+                result = result[:-1] + nextLoop
+    else:
+        result = originalState
+
+    return result
 
 def visitIfStatement(node: IfStatement, originalState: State):
     condition = visit(node.condition, originalState)
@@ -506,6 +562,9 @@ def visit(node: AST, originalState: State):
     elif type(node) == Identifier:
         node: Identifier
         return visitIdentifier(node, originalState)
+    elif type(node) == WhileStatement:
+        node: WhileStatement
+        return visitWhileStatement(node, originalState)
     elif type(node) == IfStatement:
         node: IfStatement
         return visitIfStatement(node, originalState)
@@ -527,11 +586,10 @@ def interpret(ast: List[AST], originalState: State) -> Tuple[Union[int, State], 
             return interpret(tail, currentExpression)
         else:
             nextExpression = interpret(tail, currentExpression[-1])
-            if type(nextExpression) == State:
+            if type(nextExpression) == State:                               # TODO miss niet nodig, else kan ook als erboven geschreven worden
                 return currentExpression[:-1] + (nextExpression,)
             else:
                 return currentExpression[:-1] + nextExpression
-        # return interpret(tail, newState), visit(head, newState)
     elif tail[0] == 'EOF':
         return visit(head, newState)
     else:
