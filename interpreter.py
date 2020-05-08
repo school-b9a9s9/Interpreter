@@ -340,7 +340,7 @@ def parseIf(tokenList: List[Token]):
         return parsedStatement
 
 
-    elif head.type == 'TRUE' and type(tail[0] == Block):
+    elif head.type == 'TRUE' and type(tail[0]) == Block:
         if len(tail) > 2 and tail[1].type == 'FALSE':
             falseStatement, nextTail = parseIf(tail[1:])
             result = IfStatement(Block([]), tail[0], falseStatement.ifFalse), nextTail
@@ -348,7 +348,7 @@ def parseIf(tokenList: List[Token]):
         else:
             result = IfStatement(Block([]), tail[0]), tail[1:]
 
-    elif head.type == 'FALSE' and type(tail[0] == Block):
+    elif head.type == 'FALSE' and type(tail[0]) == Block:
         if len(tail) > 2 and tail[1].type == 'TRUE':
             trueStatement, nextTail = parseIf(tail[1:])
             result = IfStatement(Block([]), trueStatement.ifTrue, tail[0]), nextTail
@@ -574,15 +574,16 @@ def visitIfStatement(node: IfStatement, originalState: State):
         newState.errors.append(condition)
         result = newState
     elif condition[0] == True:
-        result = visit(node.ifTrue, originalState)
+        result = visit(node.ifTrue, condition[1])
     else:
         if node.ifFalse != None:
-            result = visit(node.ifFalse, originalState)
+            result = visit(node.ifFalse, condition[1])
         else:
-            result = originalState
+            result = condition[1]
     return result
 
 def visitBlock(node: Block, originalState: State):
+    newState = deepcopy(originalState)
     # voor elk item in een block. visit dat item
     head, *tail = node.expressions
     firstNode = visit(head, originalState)
@@ -591,7 +592,12 @@ def visitBlock(node: Block, originalState: State):
             nextParsedBlock = visit(Block(tail), firstNode)
             return nextParsedBlock
         else:
-            return (firstNode[0],) + visit(Block(tail), firstNode[1])
+            nextParsedBlock = visit(Block(tail), firstNode[1])
+            if type(nextParsedBlock) == State:
+                result = (firstNode[0],) + (nextParsedBlock,)
+            else:
+                result = (firstNode[0],) + nextParsedBlock
+            return result
 
     return firstNode
 
@@ -622,8 +628,12 @@ def visit(node: AST, originalState: State):
         return node, originalState # TODO check for correct behaviour
 
 
-def interpret(ast: List[AST], originalState: State) -> Tuple[Union[int, State], State]:
+def interpret(ast: List[AST], originalState: State) -> Union[State, Tuple[int, State]]:
     newState = deepcopy(originalState)
+    if type(ast) == Error:
+        newState.errors.append(ast)
+        return newState
+
     head, *tail = ast
 
     if tail != 'EOF' and len(tail) > 1:
