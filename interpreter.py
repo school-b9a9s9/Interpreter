@@ -44,7 +44,7 @@ def getTokenType(value: str) -> str:
         'MULTIPLY'          : r'[*]',
         'DIVIDE'            : r'[/]',
         'SUBTRACT'          : r'[-]',
-        'COMPARE'           : r'[<>]',
+        'COMPARE'           : r'[<>]|^eq$',
         'ASSIGN'            : r'[=]',
         'BLOCK'             : r'[()]',
         'END'               : r';',
@@ -129,7 +129,7 @@ def lex(sourceCode: str, s: str = '', currentPosition: Tuple[int, int] = (1, 1))
 # Parser
 # ---------------------------------------------
 PRECEDENCE = {
-    '=' : 1,
+    'eq' : 1,
     '<' : 2,
     '>' : 2,
     '+' : 3,
@@ -293,7 +293,9 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
                 result = parseExpression(tokens)
     elif head.value == ')':
         if tokens[0].value == '(':
-            tokens.append(Token('END', ';', head.line, head.position))
+            if type(tokens[-1]) == Token and tokens[-1].type != 'END':    # Add END token if it isn't there
+                tokens.append(Token('END', ';', head.line, head.position))
+
             expressions = parse(tokens[1:])
             if type(expressions) == Error:
                 return expressions
@@ -331,47 +333,83 @@ def parseWhile(tokenList: List[Token]):
 def parseIf(tokenList: List[Token]):
     head, *tail = tokenList
 
-    if head.type == 'IF' and tail[0].type == 'BLOCK':
+    if head.type == 'IF' and type(tail[0]) == Block:  # if block is already parsed, for example when if inside while
+        condition = tail[0]
+        parsedStatement = parseIf(tail[1:])
+        parsedStatement[0].condition = condition
+        return parsedStatement
+
+
+    elif head.type == 'TRUE' and type(tail[0] == Block):
+        if len(tail) > 2 and tail[1].type == 'FALSE':
+            falseStatement, nextTail = parseIf(tail[1:])
+            result = IfStatement(Block([]), tail[0], falseStatement.ifFalse), nextTail
+
+        else:
+            result = IfStatement(Block([]), tail[0]), tail[1:]
+
+    elif head.type == 'FALSE' and type(tail[0] == Block):
+        if len(tail) > 2 and tail[1].type == 'TRUE':
+            trueStatement, nextTail = parseIf(tail[1:])
+            result = IfStatement(Block([]), trueStatement.ifTrue, tail[0]), nextTail
+        else:
+            result = IfStatement(Block([]), ifFalse=tail[0]), tail[1:]
+
+    elif head.type == 'IF' and tail[0].type == 'BLOCK':
         parsedBlock = parseBlock(tail)
         condition = parsedBlock[0]
 
-        parsedFirstStatement = parseIf(parsedBlock[1])
-        if parsedFirstStatement == None:
+        parsedStatement = parseIf(parsedBlock[1])
+        if parsedStatement == None:
             return Error('Expected yea or nah block after if statement', head.line, head.position)
 
-        parsedFirstStatement: Tuple[IfStatement, List[Token]]
-        parsedSecondStatement = parseIf(parsedFirstStatement[1])
+        parsedStatement: Tuple[IfStatement, List[Token]]
+        parsedStatement[0].condition = condition
+        result = parsedStatement
 
-        if parsedSecondStatement == None:
-            result = IfStatement(condition, parsedFirstStatement[0].ifTrue, parsedFirstStatement[0].ifFalse), parsedFirstStatement[1]
-        elif parsedFirstStatement[0].ifTrue == None and parsedSecondStatement[0].ifFalse == None:   # if second was ifTrue and first was ifFalse
-            result = IfStatement(condition, parsedSecondStatement[0].ifTrue, parsedFirstStatement[0].ifFalse), parsedSecondStatement[1]
-        elif parsedSecondStatement[0].ifTrue == None and parsedFirstStatement[0].ifFalse == None:   # if first was ifTrue and second was ifFalse
-            result = IfStatement(condition, parsedFirstStatement[0].ifTrue, parsedSecondStatement[0].ifFalse), parsedSecondStatement[1]
-        else:
-            result = Error('Something went wrong with if statement', head.line, head.position)
-
-
-    elif head.type == 'IF' and tail[0].type != 'BLOCK':
+    elif head.type == 'IF' and (tail[0].type != 'BLOCK' or type(tail[0] != Block)):
         result = Error('if statement needs to be followed by a code block', head.line, head.position)
 
-    elif head.type == 'TRUE':   # TODO Check if next = false
+    elif head.type == 'TRUE' and tail[0].type == 'BLOCK':
         parsedBlock = parseBlock(tail)
         ifTrue = parsedBlock[0]
-        result = IfStatement(Block([]), ifTrue), parsedBlock[1]
+        nextTail = parsedBlock[1]
+        if len(nextTail) and nextTail[0].type == 'FALSE':
+            parsedFalseStatement = parseIf(nextTail)
+            if parsedFalseStatement[0].ifTrue != None:
+                # Error only 1 yea per if
+                pass
+            else:
+                result = IfStatement(Block([]), ifTrue, parsedFalseStatement[0].ifFalse), parsedFalseStatement[1]
 
-    elif head.type == 'FALSE':  # TODO check if next = true
+        elif len(nextTail) and nextTail[0].type == 'TRUE':
+            pass
+            # Error 2x true
+        else:
+            result = IfStatement(Block([]), ifTrue), nextTail
+
+    elif head.type == 'FALSE':
         parsedBlock = parseBlock(tail)
         ifFalse = parsedBlock[0]
-        result = IfStatement(Block([]), ifFalse=ifFalse), parsedBlock[1]
+        nextTail = parsedBlock[1]
+        if len(nextTail) and nextTail[0].type == 'TRUE':
+            parsedTrueStatement = parseIf(nextTail)
+            if parsedTrueStatement[0].ifFalse != None:
+                # Error only 1 yea per if
+                pass
+            else:
+                result = IfStatement(Block([]), parsedTrueStatement[0].ifTrue, ifFalse), parsedTrueStatement[1]
+
+        elif len(nextTail) and nextTail[0].type == 'FALSE':
+            pass
+            # Error 2x true
+        else:
+            result = IfStatement(Block([]), ifFalse=ifFalse), nextTail
 
     else:
         result = None
 
-
-
     return result
-
 
 
 def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error, Tuple[Tuple[AST], List[Token]]]:
@@ -498,7 +536,8 @@ def visitBinaryOperator(node: BinaryOperator, originalState: State) -> Tuple[int
         "*": operator.mul,
         "/": operator.truediv,
         "<": operator.lt,
-        ">": operator.gt
+        ">": operator.gt,
+        "eq": operator.eq
     }
     operatorFunction = operators[node.operator.value]
     if (type(lhs) == int or type(lhs) == float) and (type(rhs) == int or type(rhs) == float):
@@ -530,10 +569,17 @@ def visitWhileStatement(node: WhileStatement, originalState: State):
 
 def visitIfStatement(node: IfStatement, originalState: State):
     condition = visit(node.condition, originalState)
-    if condition[0] == True:
+    if type(condition) == Error:
+        newState = deepcopy(originalState)
+        newState.errors.append(condition)
+        result = newState
+    elif condition[0] == True:
         result = visit(node.ifTrue, originalState)
     else:
-        result = visit(node.ifFalse, originalState)
+        if node.ifFalse != None:
+            result = visit(node.ifFalse, originalState)
+        else:
+            result = originalState
     return result
 
 def visitBlock(node: Block, originalState: State):
