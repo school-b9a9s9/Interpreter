@@ -7,6 +7,28 @@ import operator
 inputFile = open("input.txt", "r")
 sourceCode= inputFile.read()
 
+# --------------------------------------------
+# Decorator
+# --------------------------------------------
+def debug(function):
+    def inner(*args, **kwargs):
+        inner.called += 1
+        inner.arguments.append(args)
+
+        returnedValue = function(*args, **kwargs)
+
+        inner.returnValues.append(returnedValue)
+
+        return returnedValue
+
+    inner.called = 0
+    inner.arguments = []
+    inner.returnValues = []
+    inner.getCallCount = lambda : str(function.__name__) + ' is called ' + str(inner.called) + ' times'
+    inner.getArguments = lambda : str(function.__name__) + ' is called with arguments: ' + str(inner.arguments)
+    inner.getReturnValues = lambda : str(function.__name__) + ' returned ' + str(inner.returnValues)
+    inner.getStats = lambda : inner.getCallCount() + '\n' + inner.getArguments() + '\n' + inner.getReturnValues() + '\n'
+    return inner
 # ---------------------------------------------
 # Classes
 # ---------------------------------------------
@@ -56,11 +78,11 @@ def getTokenType(value: str) -> str:
         'NUMBER'            : r'^[0-9]*$',
         'IDENTIFIER'        : r'\w'             # Has to be last
     }
-    for tokenType in tokenTypes:
-        if re.match(tokenTypes.get(tokenType), value):
-            return tokenType
-
-    return "UNKNOWN"
+    tokenTypeMatch = list(filter(lambda tokenType: re.match(tokenTypes.get(tokenType), value), tokenTypes))
+    if len(tokenTypeMatch) > 0:
+        return tokenTypeMatch[0]
+    else:
+        return "UNKNOWN"
 
 
 # --------Vraag: moet ik in deze functie definitie nou iets zeggen over getTokenType of niet?-------
@@ -601,6 +623,7 @@ def visitBlock(node: Block, originalState: State):
 
     return firstNode
 
+@debug
 def visit(node: AST, originalState: State):
     if type(node) == BinaryOperator:
         node: BinaryOperator
@@ -627,7 +650,7 @@ def visit(node: AST, originalState: State):
         print('dit gaat fout(node niet bekend: ' + str(node))
         return node, originalState # TODO check for correct behaviour
 
-
+@debug
 def interpret(ast: List[AST], originalState: State) -> Union[State, Tuple[int, State]]:
     newState = deepcopy(originalState)
     if type(ast) == Error:
@@ -652,10 +675,11 @@ def interpret(ast: List[AST], originalState: State) -> Union[State, Tuple[int, S
         pass # has to return an error
 
 
-
 # ---------------------------------------------
 # Run/Debug
 # ---------------------------------------------
+
+
 # for i in (lex(sourceCode)):
 #     print(i)
 
@@ -663,3 +687,6 @@ originalState = State()
 # parse(lex(sourceCode))
 # print(parse(lex(sourceCode)))
 print(interpret(parse(lex(sourceCode)), originalState))
+print(interpret.getStats())
+print(visit.getStats())
+
