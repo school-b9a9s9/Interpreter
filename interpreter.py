@@ -7,7 +7,7 @@ import sys
 # --------------------------------------------
 # Decorator
 # --------------------------------------------
-def debug(function):
+def debug(function: Callable[[any], any]) -> Callable[[any], any]:
     def inner(*args, **kwargs):
         inner.called += 1
         inner.arguments.append(args)
@@ -26,12 +26,15 @@ def debug(function):
     inner.getReturnValues = lambda : str(function.__name__) + ' returned ' + str(inner.returnValues)
     inner.getStats = lambda : inner.getCallCount() + '\n' + inner.getArguments() + '\n' + inner.getReturnValues() + '\n'
     return inner
+
 # ---------------------------------------------
 # Classes
 # ---------------------------------------------
+# Superclass for all AST nodes
 class AST():
     pass
 
+# Class to represent Errors
 class Error(AST):
     def __init__(self, errorMessage: str, line: int, position: int):
         self.errorMessage = errorMessage
@@ -41,6 +44,7 @@ class Error(AST):
     def __repr__(self):
         return self.errorMessage + ' at line: ' + str(self.line) + ', position: ' + str(self.position)
 
+# Class to represent tokens
 class Token():
     def __init__(self, type: str, value: str, line: int, position: int):
         self.type = type
@@ -56,7 +60,8 @@ class Token():
 # Lexer
 # ---------------------------------------------
 
-# This function returns a the token-type of a certain string
+# This function returns the token-type of a certain string
+# getTokenType :: str -> str
 def getTokenType(value: str) -> str:
     tokenTypes = {
         'ADD'               : r'[+]',
@@ -83,15 +88,16 @@ def getTokenType(value: str) -> str:
         return "UNKNOWN"
 
 
-# --------Vraag: moet ik in deze functie definitie nou iets zeggen over getTokenType of niet?-------
 # This function creates a token (using getTokenType) and returns a function that adds that token to a list.
-# createToken :: str -> Tuple[int,int] -> Callable[List[Token]] -> Union[List[Token], None]
-def createToken(value: str, position: Tuple[int, int]) -> Union[Callable[[List[Token]], List[Token]], Callable[[List[Token]], None]]:
-    def addTokenToList(tokenList):
-        tokenList.append(token)
+# If no token is created, this function returns the original tokenList
+# createToken :: str -> Tuple[int,int] -> Union[Callable, Callable[[List[Token], List[Token]]]]
+def createToken(value: str, position: Tuple[int, int]) -> Callable[[List[Token]], List[Token]]:
+    def addTokenToList(tokenList: List[Token]) -> List[Token]:
+        newTokenList = deepcopy(tokenList)
+        newTokenList.append(token)
+        return newTokenList
+    def doNothing(tokenList: List[Token]) -> List[Token]:
         return tokenList
-    def doNothing(tokenList):
-        pass
 
     if len(value) == 0:
         return doNothing
@@ -103,7 +109,8 @@ def createToken(value: str, position: Tuple[int, int]) -> Union[Callable[[List[T
     return addTokenToList
 
 # This function returns a function to update to either a newline, or a next character.
-def updateCurrentPosition(currentCharacter) -> Callable[[Tuple[int, int]], Tuple[int, int]]:
+# updateCurrentPosition :: str -> Callable[[Tuple[int, int]], Tuple[int, int]]
+def updateCurrentPosition(currentCharacter: str) -> Callable[[Tuple[int, int]], Tuple[int, int]]:
     def newLine(lastPosition: Tuple[int, int]) -> Tuple[int, int]:
         newPosition = lastPosition[0] + 1, 1
         return newPosition
@@ -118,30 +125,31 @@ def updateCurrentPosition(currentCharacter) -> Callable[[Tuple[int, int]], Tuple
         return nextCharacter
 
 # This function converts the sourcecode to tokens.
-# lex :: str -> List[Token]
-def lex(sourceCode: str, s: str = '', currentPosition: Tuple[int, int] = (1, 1)) -> List[Token]: # sourceCode: code, s: not-tokens to be converted a token
+# lex :: str -> str -> Tuple[int, int] -> List[Token]
+def lex(sourceCode: str, prev: str = '', currentPosition: Tuple[int, int] = (1, 1)) -> List[Token]: # sourceCode: code, s: not-tokens to be converted a token
     head, *tail = sourceCode
     tokens: List(Token) = []
+    lastCharacters = deepcopy(prev)
 
     if str.isalpha(head) or str.isdigit(head):
-        s += head
+        lastCharacters += head
     else:
-        if len(s) > 0:
-            createToken(s, currentPosition)(tokens)
-        s = ''
+        if len(lastCharacters) > 0:
+            tokens = createToken(lastCharacters, currentPosition)(tokens)
+        lastCharacters = ''
 
         if head != ' ' and head != '\n':
-            createToken(head, currentPosition)(tokens)
+            tokens = createToken(head, currentPosition)(tokens)
 
-    currentPosition = updateCurrentPosition(head)(currentPosition)
+    nextPosition = updateCurrentPosition(head)(currentPosition)
 
     if len(tail) > 0:
         if tokens:
-            return tokens + lex(tail, s, currentPosition)
+            return tokens + lex(tail, lastCharacters, nextPosition)
         else:
-            return lex(tail, s, currentPosition)
+            return lex(tail, lastCharacters, nextPosition)
     else:
-        createToken(s, currentPosition)(tokens)
+        createToken(lastCharacters, currentPosition)(tokens)
         return tokens
 
 
@@ -158,24 +166,30 @@ PRECEDENCE = {
     '/' : 4
 }
 
+# AST node classes:
+
+# Class to represent a code block with one or more expressions
 class Block(AST):
     def __init__(self, expressions: List[AST]):
         self.expressions = expressions
     def __repr__(self):
         return 'Block[' + str(self.expressions) + ']'
 
+# Class to represent a number value
 class Number(AST):
     def __init__(self, value: Token):
         self.value = value
     def __repr__(self):
         return 'Number(' + str(self.value.value) + ')'
 
+# Class to represent an identifier (variables)
 class Identifier(AST):
     def __init__(self, value: Token):
         self.value = value
     def __repr__(self):
         return 'Identifier(' + str(self.value.value) + ')'
 
+# Class to represent an assignment node
 class Assign(AST):
     def __init__(self, variable: Identifier, value: AST):
         self.variable = variable
@@ -183,6 +197,7 @@ class Assign(AST):
     def __repr__(self):
         return 'Assign{' + str(self.variable) + '=' + str(self.value) + '}'
 
+# Class to represent a while statement
 class WhileStatement(AST):
     def __init__(self, condition: Block, ifTrue: Block):
         self.condition = condition
@@ -190,6 +205,7 @@ class WhileStatement(AST):
     def __repr__(self):
         return 'While[' + str(self.condition) + ': ifTrue(' + str(self.ifTrue) + ')'
 
+# Class to represent an if statement
 class IfStatement(AST):
     def __init__(self, condition: Block, ifTrue: Block = None, ifFalse: Block = None):
         self.condition = condition
@@ -198,6 +214,7 @@ class IfStatement(AST):
     def __repr__(self):
         return 'if[' + str(self.condition) + ': ifTrue(' + str(self.ifTrue) + '), ifFalse(' + str(self.ifFalse) + ')]'
 
+# Class to represent a binary operator
 class BinaryOperator(AST):
     def __init__(self, left: AST, operator: Token, right: AST):
         self.left = left
@@ -206,17 +223,20 @@ class BinaryOperator(AST):
     def __repr__(self):
         return 'BinaryOperator{ ' + str(self.left) + ' ' + str(self.operator.value) + ' ' + str(self.right) + ' }'
 
+# Class to represent a print statement
 class PrintStatement(AST):
     def __init__(self, result: AST):
         self.result = result
     def __repr__(self):
         return 'Print[' + str(self.result) + ']'
 
+
 # ---------------------------------------------
 # Parse functions
 # ---------------------------------------------
 
-# This function parses binary operators. where head is the operator
+# This function parses binary operators, where head is the operator
+# parseBinaryOperator :: AST -> List[Tokens] -> Union[BinaryOperator, Error, Tuple[BinaryOperator, List[Token]]]
 def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperator, Error, Tuple[BinaryOperator, List[Token]]]:
     head, *tail = tokenList
     # return Error if following character is not a block, number or identifier
@@ -225,12 +245,14 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
 
     # if this is the last operator return it with the tail, else return a binary operator with the next binary operator
     elif tail[1].type == 'END':
+        # if current precedence is higher than the precedence of the lhs (example: 3+3*9)
         if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
+            lhs: BinaryOperator
             nextParsedToken = parseExpression(tail[0:2])[0][0]
             if type(nextParsedToken) == Error:
                 nextParsedToken: Error
                 return nextParsedToken
-
+            # with example 3+3*9, returns binop(3 + binop(3 * 9))
             newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, BinaryOperator(lhs.right, head, nextParsedToken))
             if len(tail[2:]):
                 return newBinaryOperator, tail[2:]
@@ -242,12 +264,13 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
                 parsedRhs: Error
                 return parsedRhs
             else:
+                # with example 3*3+9, returns binop(binop(3*3) + 9)
                 newBinaryOperator = BinaryOperator(lhs, head, parsedRhs)
                 return newBinaryOperator, tail[1:]
 
-    # if the next operator has a higher precedence return a binary operator of lhs(.left) and the next binary operator
-    # else return the next binary operator with the current binary operator as lhs
+    # if there is an operator after head.
     elif tail[1].type == 'ADD' or tail[1].type == 'SUBTRACT' or tail[1].type == 'MULTIPLY' or tail[1].type == 'DIVIDE' or tail[1].type == 'COMPARE':
+        # if the next operator has a higher precedence return a binary operator of lhs(.left) and the next binary operator
         if type(lhs) == BinaryOperator and PRECEDENCE[head.value] > PRECEDENCE[lhs.operator.value]:
             lhs: BinaryOperator
             nextBinaryOperator = parseBinaryOperator(lhs.right, tokenList)
@@ -257,9 +280,11 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
             else:
                 nextBinaryOperator[0]: BinaryOperator
                 if PRECEDENCE[nextBinaryOperator[0].operator.value] > PRECEDENCE[lhs.operator.value]:
+                    # with example (3+3*9), return binop(3 + binop(3*9))
                     newBinaryOperator = BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0])
                     return newBinaryOperator, nextBinaryOperator[1]
                 else:
+                    # with example (3*3+9), return binop(binop(3*3) + 9)
                     newBinaryOperator = BinaryOperator(BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0].left), nextBinaryOperator[0].operator, nextBinaryOperator[0].right)
                     return newBinaryOperator, nextBinaryOperator[1]
         else:
@@ -268,6 +293,7 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
                 parsedRhs: Error
                 return parsedRhs
             else:
+                # with example (3+3+9), return binop(3 + parseExpression(3+9)
                 parsedRhs: AST
                 newBinaryOperator = BinaryOperator(lhs, head, parsedRhs) # create BinOp of lhs, head and parsed next token.
                 nextBinaryOperator = parseBinaryOperator(newBinaryOperator, tail[1:])
@@ -284,10 +310,10 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
     else:
         return Error('Invalid syntax', head.line, head.position)
 
-
-def parseAssign(lhs: AST, tokenlist: List[Token]) -> Union[Error, Tuple[Assign, List[Token]] ]:
+# parseAssign :: AST -> List[Token] -> Unionp[Error, Tuple[Assign, List[Token]]]
+def parseAssign(lhs: AST, tokenList: List[Token]) -> Union[Error, Tuple[Assign, List[Token]] ]:
     variable: Identifier = lhs
-    rhs: Union[List[Union[AST, List[Token]]], Error] = parseExpression(tokenlist)
+    rhs = parseExpression(tokenList)
     if type(rhs) == Error:
         rhs: Error
         return rhs
@@ -298,17 +324,24 @@ def parseAssign(lhs: AST, tokenlist: List[Token]) -> Union[Error, Tuple[Assign, 
         result: Assign = Assign(variable, rhs[0])
         return result, rhs[1]
 
-def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, Tuple[Block, List[Token]] ]:
-    head, *tail = tokenList
-    tokens = prev.copy()
+# parseBlock :: List[Token] -> List[Token] -> Union[Error, Tuple[Block, List[Token]]]
+def parseBlock(tokenList: List[Token], prev: List[Token] = None) -> Union[Error, Tuple[Block, List[Token]] ]:
+    if prev == None:
+        prev = []
 
+    head, *tail = tokenList
+    tokens = deepcopy(prev)
+
+    # a block inside a block is added to the token list
     if type(head) == Block:
         tokens.append(head)
         result = parseBlock(tail, tokens)
 
+    # on the first '(', parsing a block is started
     elif head.value == '(':
         if len(tokens) == 0:
             result = parseBlock(tail, [head])
+        # if this is a block inside a block, parse the subblock and add it to the token list
         else:
             parsedBlock = parseBlock(tail, [head])
             if type(parsedBlock) == Error:
@@ -317,8 +350,10 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
                 tokens.append(parsedBlock[0])
                 tokens += parsedBlock[1]
                 result = parseExpression(tokens)
+
+    # the end of a block
     elif head.value == ')':
-        if tokens[0].value == '(':
+        if len(tokens) > 0 and tokens[0].value == '(':
             if type(tokens[-1]) == Token and tokens[-1].type != 'END':    # Add END token if it isn't there
                 tokens.append(Token('END', ';', head.line, head.position))
 
@@ -328,7 +363,7 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
             else:
                 result = Block(expressions[:-1]), tail
         else:
-            print('ohooh') # TODO
+            result = Error('expected \'(\' before \')\'', head.line, head.position)
     elif head == 'EOF':
         result = Error('Expected \')\'', head.line, head.position)
     else:
@@ -336,18 +371,22 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = []) -> Union[Error, T
         result = parseBlock(tail, tokens)
 
     return result
+
 @debug
-def parseWhile(tokenList: List[Token]):
+# parseWhile :: List[Token] -> Union[Error, Tuple[WhileStatement, List[Token]], Block]
+def parseWhile(tokenList: List[Token]) -> Union[Error, Tuple[WhileStatement, List[Token]], Block]:
     head, *tail = tokenList
 
+    # if head is a while token and is followed by a code block
     if head.type == 'WHILE' and tail[0].type == 'BLOCK':
         condition, tailAfterBlock = parseBlock(tail)
-        if tailAfterBlock[0].type == 'EXECUTE': # if first token in tail of parsed block is a EXECUTE token
+        if tailAfterBlock[0].type == 'EXECUTE': # if first token in tail of parsed block is an EXECUTE token
             ifTrue, tailAfterExecute = parseWhile(tailAfterBlock)
             result = WhileStatement(condition, ifTrue), tailAfterExecute
         else:
-            result = Error('Exprected execute statement after while', head.line, head.position)
+            result = Error('Expected execute statement after while', head.line, head.position)
 
+    # if head is an execute token and followed by a code block
     elif head.type == 'EXECUTE' and tail[0].type == 'BLOCK':
         result = parseBlock(tail)
 
@@ -356,17 +395,22 @@ def parseWhile(tokenList: List[Token]):
 
     return result
 
-def parseIf(tokenList: List[Token]):
+def parseIf(tokenList: List[Token]) -> Union[Error, Tuple[IfStatement, List[Token]], IfStatement]:
     head, *tail = tokenList
 
-    if head.type == 'IF' and type(tail[0]) == Block:  # if block is already parsed, for example when if inside while
+    # if block is already parsed, for example when if inside while
+    if head.type == 'IF' and type(tail[0]) == Block:
+        # return Ifstatement with block as condition
         condition = tail[0]
         parsedStatement = parseIf(tail[1:])
-        parsedStatement[0].condition = condition
-        return parsedStatement
-
+        if type(parsedStatement) == Error:
+            return parsedStatement
+        else:
+            parsedStatement[0].condition = condition
+            return parsedStatement
 
     elif head.type == 'TRUE' and type(tail[0]) == Block:
+        # return Ifstatement with block as ifTrue
         if len(tail) > 2 and tail[1].type == 'FALSE':
             falseStatement, nextTail = parseIf(tail[1:])
             result = IfStatement(Block([]), tail[0], falseStatement.ifFalse), nextTail
@@ -375,13 +419,16 @@ def parseIf(tokenList: List[Token]):
             result = IfStatement(Block([]), tail[0]), tail[1:]
 
     elif head.type == 'FALSE' and type(tail[0]) == Block:
+        # return Ifstatement with block as ifFalse
         if len(tail) > 2 and tail[1].type == 'TRUE':
             trueStatement, nextTail = parseIf(tail[1:])
             result = IfStatement(Block([]), trueStatement.ifTrue, tail[0]), nextTail
         else:
             result = IfStatement(Block([]), ifFalse=tail[0]), tail[1:]
 
+    # if if token is followed by a block token
     elif head.type == 'IF' and tail[0].type == 'BLOCK':
+        # parse that block as condition and call parseIfStatement again to parse the ifTrue and/or ifFalse
         parsedBlock = parseBlock(tail)
         condition = parsedBlock[0]
 
@@ -389,46 +436,56 @@ def parseIf(tokenList: List[Token]):
         if parsedStatement == None:
             return Error('Expected yea or nah block after if statement', head.line, head.position)
 
-        parsedStatement: Tuple[IfStatement, List[Token]]
-        parsedStatement[0].condition = condition
-        result = parsedStatement
+        parsedStatement: Union[Error, Tuple[IfStatement, List[Token]]]
+        if type(parsedStatement) == Error:
+            result = parsedStatement
+        else:
+            parsedStatement[0].condition = condition
+            result = parsedStatement
 
     elif head.type == 'IF' and (tail[0].type != 'BLOCK' or type(tail[0] != Block)):
         result = Error('if statement needs to be followed by a code block', head.line, head.position)
 
+    # if true token is followed by a block token
     elif head.type == 'TRUE' and tail[0].type == 'BLOCK':
+        # parse that block as ifTrue
         parsedBlock = parseBlock(tail)
         ifTrue = parsedBlock[0]
         nextTail = parsedBlock[1]
+        # Check if it is followed by an ifFalse statement
         if len(nextTail) and nextTail[0].type == 'FALSE':
             parsedFalseStatement = parseIf(nextTail)
-            if parsedFalseStatement[0].ifTrue != None:
-                # Error only 1 yea per if
-                pass
+            if type(parsedFalseStatement) == Error:
+                result = parsedFalseStatement
+            elif parsedFalseStatement[0].ifTrue != None:
+                result = Error('If statement can only have 1 yea block', head.line, head.position)
             else:
                 result = IfStatement(Block([]), ifTrue, parsedFalseStatement[0].ifFalse), parsedFalseStatement[1]
 
         elif len(nextTail) and nextTail[0].type == 'TRUE':
-            pass
-            # Error 2x true
+            result = Error('If statement can only have 1 yea block', head.line, head.position)
+
         else:
             result = IfStatement(Block([]), ifTrue), nextTail
 
-    elif head.type == 'FALSE':
+    # if false token is followed by a block token
+    elif head.type == 'FALSE' and tail[0].type == 'BLOCK':
+        # parse that block as ifFalse
         parsedBlock = parseBlock(tail)
         ifFalse = parsedBlock[0]
         nextTail = parsedBlock[1]
         if len(nextTail) and nextTail[0].type == 'TRUE':
+            # Check if it is followed by an ifTrue statement
             parsedTrueStatement = parseIf(nextTail)
-            if parsedTrueStatement[0].ifFalse != None:
-                # Error only 1 yea per if
-                pass
+            if type(parsedTrueStatement) == Error:
+                result = parsedTrueStatement
+            elif parsedTrueStatement[0].ifFalse != None:
+                result = Error('If statement can only have 1 nah block', head.line, head.position)
             else:
                 result = IfStatement(Block([]), parsedTrueStatement[0].ifTrue, ifFalse), parsedTrueStatement[1]
 
         elif len(nextTail) and nextTail[0].type == 'FALSE':
-            pass
-            # Error 2x true
+            result = Error('If statement can only have 1 nah block', head.line, head.position)
         else:
             result = IfStatement(Block([]), ifFalse=ifFalse), nextTail
 
@@ -438,6 +495,7 @@ def parseIf(tokenList: List[Token]):
     return result
 
 @debug
+# parsePrint :: List[Token] -> Union[Error, Tuple[AST, List[Token]]]
 def parsePrint(tokenList: List[Token]) -> Union[Error, Tuple[AST, List[Token]]]:
     head, *tail = tokenList
     if head.type == 'PRINT':
@@ -450,10 +508,14 @@ def parsePrint(tokenList: List[Token]) -> Union[Error, Tuple[AST, List[Token]]]:
     else:
         return Error('something went wrong with print', head.line, head.position)
 
+# parseExpression :: List[Token] -> List[AST] -> Union[Error, Tuple[AST, List[Token]]]
+def parseExpression(tokenList: List[Token], last: List[AST] = None) -> Union[Error, Tuple[AST, List[Token]]]:
+    if last == None:
+        last = []
+    prev = deepcopy(last)
 
-def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error, Tuple[Tuple[AST], List[Token]]]:
-    prev = last.copy()
     if len(tokenList) > 0:
+        # check for type and call corresponding parse function
         head, *tail = tokenList
 
         if type(head) == Block:
@@ -463,7 +525,7 @@ def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error
             prev.append(Number(head))
             result = parseExpression(tail, prev)
         elif head.type == 'NUMBER' and prev != []:
-            result = Error('Syntax error', prev[0].value.line, prev[0].value.position) # TODO (wat voor error?)
+            result = Error('did not expect ' + str(tail[0].value) + ' before number', head.value.line, head.value.position)
 
         elif head.type == 'IDENTIFIER':
             if not len(prev):
@@ -486,18 +548,20 @@ def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error
                 variable = prev.pop()
                 expression = parseAssign(variable, tail)
                 result = expression
+            else:
+                result = Error('Expected variable before assignment', head.line, head.position)
 
         elif head.type == 'IF':
             result = parseIf(tokenList)
 
         elif head.type == 'TRUE' or head.type == 'FALSE':
-            result = Error('Expected if-statement', head.line, head.position)
+            result = Error('Expected if-statement before code block', head.line, head.position)
 
         elif head.type == 'WHILE':
             result = parseWhile(tokenList)
 
         elif head.type == 'EXECUTE':
-            result = Error('Expected while-statement', head.line, head.position)
+            result = Error('Expected while-statement before execute', head.line, head.position)
 
         elif head.type == 'BLOCK':
             result = parseBlock(tokenList)
@@ -513,15 +577,16 @@ def parseExpression(tokenList: List[Token], last: List[AST] = []) -> Union[Error
                 result = parseExpression(tail)
 
         else:
-            result = 'EOF' # TODO
+            result = Error('Unhandled token: ' + head, head.line, head.position)
 
     else:
-        result = 'EOF' # TODO
+        result = 'EOF'
 
     return result
 
-def parse(tokenList: List[Token]):
-    result: Tuple[Tuple[AST], List[Token]] = parseExpression(tokenList)
+# parse :: List[Token] -> Union[Error, Tuple[AST, List[Token]], Tuple[AST, str] ]
+def parse(tokenList: List[Token]) -> Union[Error, Tuple[AST, List[Token]], Tuple[AST, str] ]:
+    result: Tuple[AST, List[Token]] = parseExpression(tokenList)
     if type(result) == Error:
         return result
     elif len(result) > 1 and len(result[1]) > 1:
