@@ -1,3 +1,10 @@
-number = 5
-if(5*6)
-getal=5 +5
+firstValue = 1;
+secondValue = 1;
+next = 0;
+whilst(next < 100)
+    execute(
+       next = firstValue + secondValue;
+       firstValue = secondValue;
+       secondValue = next;
+       display(next)
+    )
