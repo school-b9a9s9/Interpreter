@@ -74,7 +74,7 @@ def getTokenType(value: str) -> str:
         'MULTIPLY'          : r'[*]',
         'DIVIDE'            : r'[/]',
         'SUBTRACT'          : r'[-]',
-        'COMPARE'           : r'[<>]|^eq$',
+        'COMPARE'           : r'[<>]|^equals$',
         'ASSIGN'            : r'[=]',
         'BLOCK'             : r'[()]',
         'END'               : r';',
@@ -163,7 +163,7 @@ def lex(sourceCode: str, prev: str = '', currentPosition: Tuple[int, int] = (1, 
 # Parser
 # ---------------------------------------------
 PRECEDENCE = {
-    'eq' : 1,
+    'equals' : 1,
     '<' : 2,
     '>' : 2,
     '+' : 3,
@@ -265,7 +265,9 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
             else:
                 return newBinaryOperator, tail[1:]
         else:
-            parsedRhs = parseExpression(tail[0:2])[0][0]
+            parsedRhs = parseExpression(tail[0:2])[0]
+            if type(parsedRhs) != Block and type(parsedRhs) != Identifier:
+                parsedRhs = parsedRhs[0]
             if type(parsedRhs) == Error:
                 parsedRhs: Error
                 return parsedRhs
@@ -295,7 +297,7 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
                     return newBinaryOperator, nextBinaryOperator[1]
         else:
             parsedRhs = parseExpression([tail[0], Token('END', ';', head.line, head.position + 1)])[0]
-            if type(parsedRhs) != Block:
+            if type(parsedRhs) != Block and type(parsedRhs) != Identifier:
                 parsedRhs = parsedRhs[0]
             if type(parsedRhs) == Error:
                 parsedRhs: Error
@@ -659,7 +661,7 @@ def visitBinaryOperator(node: BinaryOperator, originalState: State) -> Union[Sta
         "/": operator.truediv,
         "<": operator.lt,
         ">": operator.gt,
-        "eq": operator.eq
+        "equals": operator.eq
     }
     operatorFunction = operators[node.operator.value]
     if (type(lhs) == int or type(lhs) == float) and (type(rhs) == int or type(rhs) == float):
@@ -819,15 +821,6 @@ def run():
     print(programState)
 
 
-    # parse(lex(sourceCode))
-    # print(parse(lex(sourceCode)))
-    # print(interpret.getStats())
-    # print(visit.getStats())
-    # print(parsePrint.getStats())
-    # print(parseWhile.getStats())
-# Reading input file
-# inputFile = open("input.txt", "r")
-# sourceCode = inputFile.read()
 run()
 
 
