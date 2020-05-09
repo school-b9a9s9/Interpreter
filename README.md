@@ -49,4 +49,16 @@
 |()        |()                 |2*(3+4);                   |
 
 ## Example code
-> todo: code example
+calculating fibonacci numbers:
+```
+firstValue = 1;
+secondValue = 1;
+next = 0;
+whilst(next < 100)
+    execute(
+       next = firstValue + secondValue;
+       firstValue = secondValue;
+       secondValue = next;
+    )
+display(next)
+```
