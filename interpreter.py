@@ -34,7 +34,7 @@ def debug(function: Callable[[any], any]) -> Callable[[any], any]:
 class AST():
     pass
 
-# Class to represent Errors
+# Classes to represent Errors
 class Error(AST):
     def __init__(self, errorMessage: str, line: int, position: int):
         self.errorMessage = errorMessage
@@ -43,6 +43,12 @@ class Error(AST):
 
     def __repr__(self):
         return self.errorMessage + ' at line: ' + str(self.line) + ', position: ' + str(self.position)
+
+class GlobalError(AST):
+    def __init__(self, errorMessage: str):
+        self.errorMessage = errorMessage
+    def __repr__(self):
+        return self.errorMessage
 
 # Class to represent tokens
 class Token():
@@ -602,6 +608,8 @@ def parse(tokenList: List[Token]) -> Union[Error, Tuple[AST, List[Token]], Tuple
 # ---------------------------------------------
 # Interpreter
 # ---------------------------------------------
+
+# Class to represent the program state
 class State:
     def __init__(self):
         self.variables = {}
@@ -609,33 +617,38 @@ class State:
     def __repr__(self):
         return 'State(Variables: ' + str(self.variables) + ', errors: ' + str(self.errors) +  ')'
 
+# visitNumber :: Number -> State -> Tuple[int, State]
 def visitNumber(node: Number, originalState: State) -> Tuple[int, State]:
     return int(node.value.value), originalState
 
+# visitIdentifier :: Identifier -> State -> Union[Tuple[None, State], Tuple[int, State]]
 def visitIdentifier(node: Identifier, originalState: State) -> Union[Tuple[None, State], Tuple[int, State]]:
-    newState = originalState
+    newState = deepcopy(originalState)
     variableValue = originalState.variables.get(node.value.value)
+    # return value if variable name exists, otherwise add error to state
     if variableValue == None:
-        newState.errors.append(Error('Expected value', node.value.line, node.value.position))
+        newState.errors.append(Error('Expected a value', node.value.line, node.value.position))
         return None, newState
     else:
         return variableValue, newState
 
-
+# visitAssign :: Assign -> State -> State
 def visitAssign(node: Assign, originalState: State) -> State:
     value = visit(node.value, originalState)
     if value[0] == None:
+        # if the visited value does not return anything, return the newState
         newState = value[1]
         return newState
     else:
+        # update newState with variable and return the newState
         newState = originalState
         newState.variables.update({node.variable.value.value : value[0]})
         return newState
 
-
-def visitBinaryOperator(node: BinaryOperator, originalState: State) -> Tuple[int, State]:
+# visitBinaryOperator :: BinaryOperator -> State -> Tuple[int, State]
+def visitBinaryOperator(node: BinaryOperator, originalState: State) -> Union[State, Tuple[Union[int, float], State]]:
     newState = deepcopy(originalState)
-    lhs = visit(node.left, originalState)[0]    # TODO if visit Number changes state, this needs work
+    lhs = visit(node.left, originalState)[0]
     rhs = visit(node.right, originalState)[0]
     operators = {
         "+": operator.add,
@@ -650,9 +663,11 @@ def visitBinaryOperator(node: BinaryOperator, originalState: State) -> Tuple[int
     if (type(lhs) == int or type(lhs) == float) and (type(rhs) == int or type(rhs) == float):
         return operatorFunction(lhs, rhs), newState
     else:
-        return Error('Expected Number before operator' , node.operator.line, node.operator.position)    #TODO
+        newState.errors.append(Error('Expected Number before operator' , node.operator.line, node.operator.position))
+        return newState
 
-def visitWhileStatement(node: WhileStatement, originalState: State):
+# visitWhileStatement :: WhileStatement -> State -> Union[State, Tuple[int, State]]
+def visitWhileStatement(node: WhileStatement, originalState: State) -> Union[State, Tuple[int, State]]:
     condition = visit(node.condition, originalState)
     if type(condition) == Error:
         newState = deepcopy(originalState)
@@ -674,7 +689,8 @@ def visitWhileStatement(node: WhileStatement, originalState: State):
 
     return result
 
-def visitIfStatement(node: IfStatement, originalState: State):
+# visitIfSTatement :: IfStatement -> State -> State
+def visitIfStatement(node: IfStatement, originalState: State) -> State:
     condition = visit(node.condition, originalState)
     if type(condition) == Error:
         newState = deepcopy(originalState)
@@ -692,9 +708,9 @@ def visitIfStatement(node: IfStatement, originalState: State):
     else:
         return result[-1]
 
-def visitBlock(node: Block, originalState: State):
-    newState = deepcopy(originalState)
-    # voor elk item in een block. visit dat item
+# visitBlock :: Block -> State -> Union[State, Tuple[int, State], Tuple[Tuple[int], State]]
+def visitBlock(node: Block, originalState: State) -> Union[State, Tuple[int, State], Tuple[Tuple[int], State]]:
+    # visit each item in block
     head, *tail = node.expressions
     firstNode = visit(head, originalState)
     if len(tail) > 0:
@@ -711,7 +727,8 @@ def visitBlock(node: Block, originalState: State):
 
     return firstNode
 
-def visitPrintStatement(node: PrintStatement, originalState: State):
+# visitPrintStatement :: PrintStatement -> State -> State
+def visitPrintStatement(node: PrintStatement, originalState: State) -> State:
     result = visit(node.result, originalState)
     if type(result) != State:
         print(result[0])
@@ -719,7 +736,8 @@ def visitPrintStatement(node: PrintStatement, originalState: State):
 
 
 @debug
-def visit(node: AST, originalState: State):
+# visit :: AST -> State -> Union[State, Tuple[int, State], Tuple[Tuple[int], State] ]
+def visit(node: AST, originalState: State) -> Union[State, Tuple[int, State], Tuple[Tuple[int], State] ]:
     if type(node) == BinaryOperator:
         node: BinaryOperator
         return visitBinaryOperator(node, originalState)
@@ -742,12 +760,15 @@ def visit(node: AST, originalState: State):
         node: Block
         return visitBlock(node, originalState)
     elif type(node) == PrintStatement:
+        node: PrintStatement
         return visitPrintStatement(node, originalState)
     else:
-        print('dit gaat fout(node niet bekend: ' + str(node))
-        return node, originalState # TODO check for correct behaviour
+        newState = deepcopy(originalState)
+        newState.errors.append(GlobalError('Unknown node is called: ' + str(node)))
+        return newState
 
 @debug
+# interpret :: List[AST] -> State -> Union[State, Tuple[int, State]]
 def interpret(ast: List[AST], originalState: State) -> Union[State, Tuple[int, State]]:
     newState = deepcopy(originalState)
     if type(ast) == Error:
@@ -762,14 +783,15 @@ def interpret(ast: List[AST], originalState: State) -> Union[State, Tuple[int, S
             return interpret(tail, currentExpression)
         else:
             nextExpression = interpret(tail, currentExpression[-1])
-            if type(nextExpression) == State:                               # TODO miss niet nodig, else kan ook als erboven geschreven worden
+            if type(nextExpression) == State:
                 return currentExpression[:-1] + (nextExpression,)
             else:
                 return currentExpression[:-1] + nextExpression
     elif tail[0] == 'EOF':
         return visit(head, newState)
     else:
-        pass # has to return an error
+        newState.errors.append(GlobalError('Something went wrong'))
+        return newState
 
 
 # ---------------------------------------------
