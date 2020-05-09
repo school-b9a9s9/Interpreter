@@ -294,7 +294,9 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
                     newBinaryOperator = BinaryOperator(BinaryOperator(lhs.left, lhs.operator, nextBinaryOperator[0].left), nextBinaryOperator[0].operator, nextBinaryOperator[0].right)
                     return newBinaryOperator, nextBinaryOperator[1]
         else:
-            parsedRhs = parseExpression([tail[0], Token('END', ';', head.line, head.position + 1)])[0][0]
+            parsedRhs = parseExpression([tail[0], Token('END', ';', head.line, head.position + 1)])[0]
+            if type(parsedRhs) != Block:
+                parsedRhs = parsedRhs[0]
             if type(parsedRhs) == Error:
                 parsedRhs: Error
                 return parsedRhs
@@ -308,10 +310,10 @@ def parseBinaryOperator(lhs: AST, tokenList: List[Token]) -> Union[BinaryOperato
     # if the next token is a block, parse the block and return a binary operator with that block as rhs
     elif tail[0].type == 'BLOCK':
         nextBlock = parseBlock(tail)
-        if len(nextBlock[1]) > 1:
+        if len(nextBlock[1]) > 1 and (nextBlock[1][0].type == 'ADD' or nextBlock[1][0].type == 'SUBTRACT' or nextBlock[1][0].type == 'MULTIPLY' or nextBlock[1][0].type == 'DIVIDE' or nextBlock[1][0].type == 'COMPARE'):
             return parseBinaryOperator(BinaryOperator(lhs, head, nextBlock[0]), nextBlock[1])
         else:
-            return BinaryOperator(lhs, head, nextBlock[0]), []
+            return BinaryOperator(lhs, head, nextBlock[0]), nextBlock[1]
 
     else:
         return Error('Invalid syntax', head.line, head.position)
@@ -378,7 +380,6 @@ def parseBlock(tokenList: List[Token], prev: List[Token] = None) -> Union[Error,
 
     return result
 
-@debug
 # parseWhile :: List[Token] -> Union[Error, Tuple[WhileStatement, List[Token]], Block]
 def parseWhile(tokenList: List[Token]) -> Union[Error, Tuple[WhileStatement, List[Token]], Block]:
     head, *tail = tokenList
@@ -500,7 +501,6 @@ def parseIf(tokenList: List[Token]) -> Union[Error, Tuple[IfStatement, List[Toke
 
     return result
 
-@debug
 # parsePrint :: List[Token] -> Union[Error, Tuple[AST, List[Token]]]
 def parsePrint(tokenList: List[Token]) -> Union[Error, Tuple[AST, List[Token]]]:
     head, *tail = tokenList
@@ -538,6 +538,8 @@ def parseExpression(tokenList: List[Token], last: List[AST] = None) -> Union[Err
                 prev.append(Identifier(head))
                 expression = parseExpression(tail, prev)
                 result = expression
+                if type(result[0]) == list:
+                    result = result[0][0], result[1]
             else:
                 result = Error('expected operation or assingment', head.line, head.position)
 
@@ -735,7 +737,6 @@ def visitPrintStatement(node: PrintStatement, originalState: State) -> State:
     return originalState
 
 
-@debug
 # visit :: AST -> State -> Union[State, Tuple[int, State], Tuple[Tuple[int], State] ]
 def visit(node: AST, originalState: State) -> Union[State, Tuple[int, State], Tuple[Tuple[int], State] ]:
     if type(node) == BinaryOperator:
@@ -767,9 +768,8 @@ def visit(node: AST, originalState: State) -> Union[State, Tuple[int, State], Tu
         newState.errors.append(GlobalError('Unknown node is called: ' + str(node)))
         return newState
 
-@debug
 # interpret :: List[AST] -> State -> Union[State, Tuple[int, State]]
-def interpret(ast: List[AST], originalState: State) -> Union[State, Tuple[int, State]]:
+def interpret(ast: Union[Error, List[AST]], originalState: State) -> Union[State, Tuple[int, State]]:
     newState = deepcopy(originalState)
     if type(ast) == Error:
         newState.errors.append(ast)
